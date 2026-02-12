@@ -842,46 +842,128 @@ const TICKER_SYMBOLS = {
 };
 let tickerCache = { data: [], fetchedAt: 0 };
 
+// Yahoo Finance requires crumb/cookie auth from server IPs
+let yahooCrumb = null;
+let yahooCookie = null;
+
+async function getYahooCrumb() {
+  try {
+    const ua = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
+    // Step 1: Get consent cookie
+    const consentRes = await fetch('https://fc.yahoo.com', {
+      redirect: 'manual',
+      headers: { 'User-Agent': ua }
+    });
+    const setCookie = consentRes.headers.get('set-cookie') || '';
+    yahooCookie = setCookie.split(',').map(c => c.split(';')[0].trim()).filter(Boolean).join('; ');
+
+    // Step 2: Get crumb using cookie
+    const crumbRes = await fetch('https://query2.finance.yahoo.com/v1/test/getcrumb', {
+      headers: { 'User-Agent': ua, 'Cookie': yahooCookie }
+    });
+    if (!crumbRes.ok) {
+      console.warn('[Ticker] Crumb fetch failed:', crumbRes.status);
+      return false;
+    }
+    yahooCrumb = await crumbRes.text();
+    console.log('[Ticker] Yahoo crumb acquired');
+    return true;
+  } catch (e) {
+    console.warn('[Ticker] Crumb error:', e.message);
+    return false;
+  }
+}
+
 async function fetchTickerData() {
   // Cache for 2 minutes
   if (Date.now() - tickerCache.fetchedAt < 120000 && tickerCache.data.length > 0) {
     return tickerCache.data;
   }
 
+  // Ensure we have a valid crumb
+  if (!yahooCrumb) await getYahooCrumb();
+
   const symbols = Object.keys(TICKER_SYMBOLS);
   const results = [];
+  const ua = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
+  const headers = { 'User-Agent': ua };
+  if (yahooCookie) headers['Cookie'] = yahooCookie;
 
-  // Fetch all symbols in parallel
-  await Promise.all(symbols.map(async (symbol) => {
-    try {
-      const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=1d&range=2d`;
-      const res = await fetch(url, {
-        headers: { 'User-Agent': 'Mozilla/5.0' },
-        signal: AbortSignal.timeout(5000)
-      });
-      if (!res.ok) return;
-      const data = await res.json();
-      const meta = data.chart?.result?.[0]?.meta;
-      if (!meta) return;
+  // Try batch quote endpoint first (1 request for all symbols)
+  try {
+    const symbolList = symbols.map(s => encodeURIComponent(s)).join(',');
+    const crumbParam = yahooCrumb ? `&crumb=${encodeURIComponent(yahooCrumb)}` : '';
+    const batchUrl = `https://query2.finance.yahoo.com/v7/finance/quote?symbols=${symbolList}${crumbParam}`;
+    const batchRes = await fetch(batchUrl, { headers, signal: AbortSignal.timeout(10000) });
 
-      const price = meta.regularMarketPrice;
-      const prevClose = meta.chartPreviousClose || meta.previousClose;
-      const change = prevClose ? ((price - prevClose) / prevClose * 100) : 0;
+    if (batchRes.status === 401 || batchRes.status === 403) {
+      console.warn('[Ticker] Batch auth failed, refreshing crumb...');
+      yahooCrumb = null;
+      await getYahooCrumb();
+    } else if (batchRes.ok) {
+      const data = await batchRes.json();
+      const quotes = data.quoteResponse?.result || [];
+      for (const q of quotes) {
+        const label = TICKER_SYMBOLS[q.symbol];
+        if (!label) continue;
+        const price = q.regularMarketPrice;
+        const change = q.regularMarketChangePercent || 0;
+        results.push({
+          symbol: label,
+          price,
+          change: parseFloat(change.toFixed(2)),
+          up: change >= 0
+        });
+      }
+    } else {
+      console.warn('[Ticker] Batch HTTP', batchRes.status);
+    }
+  } catch (e) {
+    console.warn('[Ticker] Batch error:', e.message);
+  }
 
-      results.push({
-        symbol: TICKER_SYMBOLS[symbol],
-        price,
-        change: parseFloat(change.toFixed(2)),
-        up: change >= 0
-      });
-    } catch {}
-  }));
+  // Fallback: individual chart requests if batch failed
+  if (results.length === 0) {
+    await Promise.all(symbols.map(async (symbol) => {
+      try {
+        const crumbParam = yahooCrumb ? `&crumb=${encodeURIComponent(yahooCrumb)}` : '';
+        const url = `https://query2.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=1d&range=2d${crumbParam}`;
+        const res = await fetch(url, { headers, signal: AbortSignal.timeout(8000) });
+        if (res.status === 401 || res.status === 403) {
+          if (!yahooCrumb) return; // already refreshing
+          yahooCrumb = null;
+          await getYahooCrumb();
+          return;
+        }
+        if (!res.ok) {
+          console.warn(`[Ticker] ${symbol} HTTP ${res.status}`);
+          return;
+        }
+        const data = await res.json();
+        const meta = data.chart?.result?.[0]?.meta;
+        if (!meta) return;
+        const price = meta.regularMarketPrice;
+        const prevClose = meta.chartPreviousClose || meta.previousClose;
+        const change = prevClose ? ((price - prevClose) / prevClose * 100) : 0;
+        results.push({
+          symbol: TICKER_SYMBOLS[symbol],
+          price,
+          change: parseFloat(change.toFixed(2)),
+          up: change >= 0
+        });
+      } catch (e) {
+        console.warn(`[Ticker] ${symbol} error:`, e.message);
+      }
+    }));
+  }
 
   // Sort to match original order
   const order = Object.values(TICKER_SYMBOLS);
   results.sort((a, b) => order.indexOf(a.symbol) - order.indexOf(b.symbol));
 
-  tickerCache = { data: results, fetchedAt: Date.now() };
+  if (results.length > 0) {
+    tickerCache = { data: results, fetchedAt: Date.now() };
+  }
   return results;
 }
 
