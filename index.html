@@ -237,6 +237,24 @@ body {
   background: rgba(0,240,255,0.2);
   box-shadow: 0 0 10px rgba(0,240,255,0.3);
 }
+.story-play.loading {
+  color: transparent;
+  border-color: var(--neon-pink);
+  position: relative;
+  pointer-events: none;
+}
+.story-play.loading::after {
+  content: '';
+  position: absolute;
+  inset: 4px;
+  border: 2px solid transparent;
+  border-top-color: var(--neon-cyan);
+  border-radius: 50%;
+  animation: spinBtn 0.6s linear infinite;
+}
+@keyframes spinBtn {
+  to { transform: rotate(360deg); }
+}
 
 /* ========== SPLASH SCREEN ========== */
 #splash {
@@ -2328,9 +2346,12 @@ class OctopusCharacter extends CharacterBase {
     this.tentacles.forEach((segments, i) => {
       const phase = this.tentacleGroups[i].userData.phase;
       segments.forEach((seg, s) => {
-        // Each segment waves with cascading delay — deeper segments move more
-        const wave = Math.sin(time * (1.5 + intensity) + phase + s * 0.6) * (0.12 + s * 0.04) * (1 + intensity);
-        const sway = Math.cos(time * (0.8 + intensity * 0.5) + phase * 1.3 + s * 0.4) * 0.08 * (1 + intensity);
+        // Gentle flowing wave — constant slow frequency, amplitude grows toward tip
+        const t = s / 5; // 0..1 normalized segment position
+        const baseAmp = 0.04 + t * 0.06; // small at base, larger at tip
+        const speakBoost = 1 + intensity * 0.3; // subtle increase when speaking, never wild
+        const wave = Math.sin(time * 0.8 + phase + s * 0.7) * baseAmp * speakBoost;
+        const sway = Math.cos(time * 0.5 + phase * 1.4 + s * 0.5) * baseAmp * 0.6 * speakBoost;
         seg.rotation.x = wave;
         seg.rotation.z = sway;
       });
@@ -2344,7 +2365,8 @@ class OctopusCharacter extends CharacterBase {
 
   updateSpeaking(time, delta, amplitude) {
     super.updateSpeaking(time, delta, amplitude);
-    this._animateTentacles(time, amplitude * 2);
+    // Clamp amplitude so tentacles never go wild
+    this._animateTentacles(time, Math.min(amplitude, 0.6));
   }
 }
 
@@ -2949,13 +2971,15 @@ class SpeechManager {
       // Request audio for current character — server generates on-demand if needed
       const url = `/api/audio/${encodeURIComponent(this.characterId)}/${encodeURIComponent(storyId)}/highkey`;
       console.log(`[Audio] Fetching: ${this.characterId} / ${storyId}`);
-      const response = await fetch(url);
+      // Use a shared abort controller so stop() can cancel in-flight fetches
+      if (!this._fetchAbort) this._fetchAbort = new AbortController();
+      const response = await fetch(url, { signal: this._fetchAbort.signal });
       if (!response.ok) return null;
       const arrayBuffer = await response.arrayBuffer();
       const audioBuffer = await this.audioContext.decodeAudioData(arrayBuffer);
       return this._trimTrailingSilence(audioBuffer);
     } catch (err) {
-      return null;
+      return null; // AbortError or network error
     }
   }
 
@@ -3182,6 +3206,8 @@ class SpeechManager {
   stop() {
     // Abort any in-flight TTS fetch
     if (this._abortController) { this._abortController.abort(); this._abortController = null; }
+    // Abort any in-flight audio fetches (fetchAudio)
+    if (this._fetchAbort) { this._fetchAbort.abort(); this._fetchAbort = null; }
     if (this._durationTimer) { clearTimeout(this._durationTimer); this._durationTimer = null; }
     if (this.currentSource) {
       if (this.currentSource._glitchTimer) clearTimeout(this.currentSource._glitchTimer);
@@ -3331,15 +3357,20 @@ class FinancialTicker {
     const mat = new THREE.MeshBasicMaterial({
       map: this.texture,
       transparent: true,
-      opacity: 0.55,
+      opacity: 0.8,
       side: THREE.DoubleSide,
-      depthWrite: false
+      depthWrite: false,
+      depthTest: false
     });
     this.mesh = new THREE.Mesh(geo, mat);
     // Position: behind the anchor (z=-0.3), diagonal from bottom-left to top-right
     this.mesh.position.set(0.5, 0.2, -0.3);
     this.mesh.rotation.z = Math.PI * 0.12; // ~22 degrees
+    this.mesh.renderOrder = 1;
     this.scene.add(this.mesh);
+
+    // Render placeholder immediately so mesh is visible
+    this.renderTexture();
 
     // Fetch data immediately and refresh every 2 min
     this.fetchData();
@@ -3361,10 +3392,26 @@ class FinancialTicker {
     const H = this.canvas.height;
 
     ctx.clearRect(0, 0, W, H);
-    ctx.fillStyle = 'rgba(10,10,26,0.6)';
+    // Solid dark background with enough contrast to be visible against scene
+    ctx.fillStyle = 'rgba(18, 12, 40, 0.95)';
     ctx.fillRect(0, 0, W, H);
+    // Top/bottom edge highlights
+    ctx.fillStyle = 'rgba(184, 41, 221, 0.4)';
+    ctx.fillRect(0, 0, W, 1);
+    ctx.fillRect(0, H - 1, W, 1);
 
-    if (this.tickerData.length === 0) return;
+    if (this.tickerData.length === 0) {
+      ctx.font = 'bold 24px monospace';
+      ctx.textBaseline = 'middle';
+      ctx.fillStyle = '#6a6e80';
+      const noData = 'AWAITING DATA \u25C6 MARKET FEED \u25C6 ';
+      const noDataW = ctx.measureText(noData).width;
+      for (let x = 0; x < W; x += noDataW) {
+        ctx.fillText(noData, x, H / 2);
+      }
+      this.texture.needsUpdate = true;
+      return;
+    }
 
     ctx.font = 'bold 28px monospace';
     ctx.textBaseline = 'middle';
@@ -3641,6 +3688,10 @@ class PlaybackController {
     this.isPlaying = true;
     this.onActiveStory(index, story);
 
+    // Show loading spinner on this story's play button
+    const playBtn = document.querySelector(`.story-card[data-index="${index}"] .story-play`);
+    if (playBtn) playBtn.classList.add('loading');
+
     // Track play stat
     fetch('/api/stats', {
       method: 'POST',
@@ -3658,6 +3709,7 @@ class PlaybackController {
     if (gen !== this._playGeneration) return;
 
     if (headlineBuf && summaryBuf) {
+      if (playBtn) playBtn.classList.remove('loading');
       const joined = this.speech.joinBuffers(headlineBuf, summaryBuf, 0.6);
       await this.speech.playBuffer(joined, story.emotion);
       if (gen !== this._playGeneration) return;
@@ -3678,6 +3730,7 @@ class PlaybackController {
     ]);
     if (gen !== this._playGeneration) return;
 
+    if (playBtn) playBtn.classList.remove('loading');
     if (liveHeadline && liveSummary) {
       const joined = this.speech.joinBuffers(liveHeadline, liveSummary, 0.6);
       await this.speech.playBuffer(joined, story.emotion);
@@ -3750,6 +3803,8 @@ class MaxHeadlineApp {
     this.modeGlitchMult = 1;
     this.storyHero = null;
     this.shadesVisible = true;
+    this._audioReady = new Map(); // charId → Set<storyId>
+    this._audioProbeInterval = null;
   }
 
   // Phase 1: Build 3D scene, characters, UI — no audio, no autoplay
@@ -3949,6 +4004,7 @@ class MaxHeadlineApp {
     this.showLoading();
     await this.newsEngine.fetchNews('everything', CHARACTER_META[this.currentCharacterId].name);
     this.renderStoryFeed();
+    this._probeAudioStatus(this.currentCharacterId);
     this.updateHeadlineTicker();
     if (this.storyHero && this.newsEngine.stories.length) {
       await this.storyHero.loadStoryImages(this.newsEngine.stories);
@@ -4654,12 +4710,11 @@ class MaxHeadlineApp {
     // Update speech voice — HARD stop everything, then switch
     if (this.speech) {
       const storyIdx = this.playback ? this.playback.currentIndex : -1;
-      // Kill all playback and speech immediately
+      // Kill all playback and speech immediately — must use stop() to bump _playGeneration
+      // so in-flight fetchAudio/playStory calls from the old character bail out
       if (this.playback) {
-        this.playback._cancelled = true;
-        this.playback.isPlaying = false;
+        this.playback.stop();
       }
-      this.speech.stop();
       this.speech.characterId = id;
       // Cancel any previous pending restart
       if (this._charSwitchTimer) clearTimeout(this._charSwitchTimer);
@@ -4667,6 +4722,21 @@ class MaxHeadlineApp {
       // Trigger on-demand TTS in background + show loading if needed
       this._prepareCharacterVoice(id, storyIdx);
     }
+
+    // Flip all story play buttons to loading, then probe for ready audio
+    document.querySelectorAll('.story-play').forEach(btn => btn.classList.add('loading'));
+    // If we already know this character's audio is ready, resolve instantly
+    const readySet = this._audioReady.get(id);
+    if (readySet) {
+      this.newsEngine.stories.forEach((story, idx) => {
+        if (readySet.has(story.id)) {
+          const btn = document.querySelector(`.story-card[data-index="${idx}"] .story-play`);
+          if (btn) btn.classList.remove('loading');
+        }
+      });
+    }
+    this._probeAudioStatus(id);
+    this._startAudioProbePolling(id);
 
     // Update UI
     document.getElementById('char-name').textContent = CHARACTER_META[id].name.toUpperCase();
@@ -4737,7 +4807,8 @@ class MaxHeadlineApp {
         try {
           const check = await fetch(testUrl, { method: 'HEAD' });
           if (check.ok) {
-            // Ready!
+            // Ready! Re-probe all story cards (server generates all at once)
+            this._probeAudioStatus(charId);
             clearInterval(pollInterval);
             loadingFill.style.width = '100%';
             loadingText.textContent = `${charName} is live!`;
@@ -4773,6 +4844,53 @@ class MaxHeadlineApp {
         this.playback.playStory(storyIdx);
       }, 300);
     }
+  }
+
+  // Probe audio availability for all stories for a given character
+  async _probeAudioStatus(charId) {
+    const stories = this.newsEngine.stories;
+    if (!stories.length) return;
+
+    if (!this._audioReady.has(charId)) {
+      this._audioReady.set(charId, new Set());
+    }
+    const readySet = this._audioReady.get(charId);
+
+    const probes = stories.map(async (story, index) => {
+      const url = `/api/audio/${encodeURIComponent(charId)}/${encodeURIComponent(story.id)}-headline/${currentEnergyMode}`;
+      try {
+        const res = await fetch(url, { method: 'HEAD' });
+        const btn = document.querySelector(`.story-card[data-index="${index}"] .story-play`);
+        if (res.ok) {
+          readySet.add(story.id);
+          if (btn) btn.classList.remove('loading');
+        } else {
+          if (btn && this.currentCharacterId === charId) btn.classList.add('loading');
+        }
+      } catch {
+        // network error — leave as loading
+      }
+    });
+
+    await Promise.all(probes);
+    return readySet.size >= stories.length;
+  }
+
+  // Start polling audio status until all stories are ready, then stop
+  _startAudioProbePolling(charId) {
+    if (this._audioProbeInterval) clearInterval(this._audioProbeInterval);
+    this._audioProbeInterval = setInterval(async () => {
+      if (this.currentCharacterId !== charId) {
+        clearInterval(this._audioProbeInterval);
+        this._audioProbeInterval = null;
+        return;
+      }
+      const allReady = await this._probeAudioStatus(charId);
+      if (allReady) {
+        clearInterval(this._audioProbeInterval);
+        this._audioProbeInterval = null;
+      }
+    }, 3000);
   }
 
   // ---------- UI ----------
@@ -4906,6 +5024,7 @@ class MaxHeadlineApp {
     this.newsEngine._cache[mode] = null; // Force refresh on mode switch
     await this.newsEngine.fetchNews(mode, CHARACTER_META[this.currentCharacterId].name);
     this.renderStoryFeed();
+    this._probeAudioStatus(this.currentCharacterId);
     this.updateHeadlineTicker();
     if (this.storyHero && this.newsEngine.stories.length) {
       await this.storyHero.loadStoryImages(this.newsEngine.stories);
@@ -4921,6 +5040,7 @@ class MaxHeadlineApp {
     this.newsEngine._cache[this.currentMode] = null;
     await this.newsEngine.fetchNews(this.currentMode, CHARACTER_META[this.currentCharacterId].name);
     this.renderStoryFeed();
+    this._probeAudioStatus(this.currentCharacterId);
     this.updateHeadlineTicker();
     if (this.storyHero && this.newsEngine.stories.length) {
       await this.storyHero.loadStoryImages(this.newsEngine.stories);
@@ -4966,7 +5086,7 @@ class MaxHeadlineApp {
         <div class="story-footer">
           <span class="story-severity">${severityBar}</span>
           <span class="story-source">${story.source}</span>
-          <button class="story-play">\u25B6</button>
+          <button class="story-play loading" data-story-id="${story.id}">\u25B6</button>
         </div>
       `;
 
