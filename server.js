@@ -287,12 +287,16 @@ TONE: ${toneInstructions[mode] || toneInstructions.everything}
 
 Search for today's news. Return EXACTLY 8 stories as a JSON array. No markdown fences, no commentary — just the JSON array.
 
-SUMMARYHIGHKEY INSTRUCTIONS: Write as someone THRILLED to tell you what's really going on. Not angry — EXCITED. Like a brilliant friend who cracked the code and grabbed your shoulders to explain. Follow the money, name incentives, connect dots — with infectious energy. ${mode === 'uponly' ? 'Be GENUINELY electrified — explain WHY this is revolutionary, the technical detail, why it changes everything for real humans.' : 'Be the smartest person at the party making everyone feel smarter. Specific insider details.'}
+SUMMARYHIGHKEY INSTRUCTIONS: 2-3 PUNCHY sentences MAX. Write like the smartest, most excited person at the party who cracked the code. Follow the money, name the incentive, connect ONE key dot — with infectious energy. No filler, no hedging, no long setups. ${mode === 'uponly' ? 'Be genuinely electrified — ONE killer technical detail, ONE reason it changes everything.' : 'Be razor-sharp. Specific insider detail, not rants.'}
+
+HEADLINE: Max 8 words. Punchy. Broadcast-ready.
+SUMMARY: 1-2 sentences max. Tight newsreader copy. Under 40 words.
+SUMMARYHIGHKEY: 2-3 sentences max. Under 60 words. The real take.
 
 Return this structure (imageUrl can be null if you can't find a direct image URL):
-[{"id":"slug","headline":"Under 12 words","summary":"2-3 sentences, measured newsreader","summaryHighkey":"2-4 sentences per instructions above","emotion":"excited|sarcastic|alarmed|amused|deadpan|outraged|hopeful|bewildered","severity":5,"source":"Source Name","sourceUrl":"real article URL","imageUrl":"direct .jpg/.png/.webp URL or null","category":"politics|tech|science|culture|environment|world|economy|health"}]
+[{"id":"slug","headline":"Under 8 words","summary":"1-2 sentences, under 40 words","summaryHighkey":"2-3 sentences, under 60 words","emotion":"excited|sarcastic|alarmed|amused|deadpan|outraged|hopeful|bewildered","severity":5,"source":"Source Name","sourceUrl":"real article URL","imageUrl":"direct .jpg/.png/.webp URL or null","category":"politics|tech|science|culture|environment|world|economy|health"}]
 
-CRITICAL: Always return JSON. sourceUrl must be real URLs from search results. severity 1=lighthearted 10=existential.`
+CRITICAL: Always return JSON. sourceUrl must be real URLs from search results. severity 1=lighthearted 10=existential. KEEP IT TIGHT — every word costs money.`
       }]
     })
   });
@@ -380,7 +384,7 @@ async function resolveStoryImages(stories) {
 }
 
 // =====================================================================
-// TTS GENERATION — pre-generate audio for all stories
+// TTS GENERATION
 // =====================================================================
 async function generateTTSForStory(characterId, storyId, text, voiceId, energy, voiceSettings) {
   const filename = `${characterId}-${storyId}-${energy}.mp3`;
@@ -411,7 +415,8 @@ async function generateTTSForStory(characterId, storyId, text, voiceId, energy, 
     );
 
     if (!response.ok) {
-      console.error(`TTS error for ${storyId}/${energy}:`, response.status);
+      const errText = await response.text();
+      console.error(`ElevenLabs error:`, response.status, errText);
       return null;
     }
 
@@ -425,23 +430,22 @@ async function generateTTSForStory(characterId, storyId, text, voiceId, energy, 
   }
 }
 
+// Only pre-generate for the default character (frog) on scheduled refresh
+// All other characters generate on-demand when first requested
 async function generateAllTTS(stories, characterId = 'frog') {
   const voice = CHARACTER_VOICES[characterId];
   if (!voice) return;
 
-  console.log(`Generating TTS for ${stories.length} stories (${voice.name})...`);
+  console.log(`Pre-generating TTS for ${stories.length} stories (${voice.name} only)...`);
 
   for (const story of stories) {
-    // Generate headline and summary separately for different intonation
     for (const energy of ['lowkey', 'highkey']) {
-      // Headline — punchy, announcement style
       await generateTTSForStory(
         characterId, `${story.id}-headline`, story.headline, voice.voiceId,
         energy, VOICE_ENERGY_SETTINGS[`${energy}-headline`]
       );
       await new Promise(r => setTimeout(r, 300));
 
-      // Summary — lowkey: measured editorial, highkey: unhinged Max Headroom
       const summaryText = (energy === 'highkey' && story.summaryHighkey) ? story.summaryHighkey : story.summary;
       await generateTTSForStory(
         characterId, `${story.id}-summary`, summaryText, voice.voiceId,
@@ -450,7 +454,43 @@ async function generateAllTTS(stories, characterId = 'frog') {
       await new Promise(r => setTimeout(r, 300));
     }
   }
-  console.log('TTS generation complete.');
+  console.log('Pre-generation complete.');
+}
+
+// On-demand TTS: generate all clips for a character+mode combination
+// Called when a user first selects a non-default character
+const _generatingCharacters = new Set();
+
+async function generateCharacterTTS(characterId, mode) {
+  const key = `${characterId}-${mode}`;
+  if (_generatingCharacters.has(key)) return; // already in progress
+  _generatingCharacters.add(key);
+
+  const voice = CHARACTER_VOICES[characterId];
+  if (!voice) { _generatingCharacters.delete(key); return; }
+
+  const cache = loadCache(mode);
+  if (!cache || !cache.stories) { _generatingCharacters.delete(key); return; }
+
+  console.log(`On-demand TTS: generating ${characterId} for ${mode}...`);
+  for (const story of cache.stories) {
+    for (const energy of ['lowkey', 'highkey']) {
+      await generateTTSForStory(
+        characterId, `${story.id}-headline`, story.headline, voice.voiceId,
+        energy, VOICE_ENERGY_SETTINGS[`${energy}-headline`]
+      );
+      await new Promise(r => setTimeout(r, 200));
+
+      const summaryText = (energy === 'highkey' && story.summaryHighkey) ? story.summaryHighkey : story.summary;
+      await generateTTSForStory(
+        characterId, `${story.id}-summary`, summaryText, voice.voiceId,
+        energy, VOICE_ENERGY_SETTINGS[`${energy}-summary`]
+      );
+      await new Promise(r => setTimeout(r, 200));
+    }
+  }
+  _generatingCharacters.delete(key);
+  console.log(`On-demand TTS complete: ${characterId} for ${mode}`);
 }
 
 // =====================================================================
@@ -589,22 +629,88 @@ app.post('/api/news', async (req, res) => {
 });
 
 // GET /api/audio/:characterId/:storyId/:energy — serve pre-generated audio
-app.get('/api/audio/:characterId/:storyId/:energy', (req, res) => {
+app.get('/api/audio/:characterId/:storyId/:energy', async (req, res) => {
   const { characterId, storyId, energy } = req.params;
   if (!['lowkey', 'highkey'].includes(energy)) {
     return res.status(400).json({ error: 'energy must be lowkey or highkey' });
   }
 
   const filepath = path.join(AUDIO_DIR, `${characterId}-${storyId}-${energy}.mp3`);
-  if (!fs.existsSync(filepath)) {
-    return res.status(404).json({ error: 'Audio not yet generated' });
+
+  // If file exists, serve it immediately (cached)
+  if (fs.existsSync(filepath)) {
+    res.set({ 'Content-Type': 'audio/mpeg', 'Cache-Control': 'public, max-age=86400' });
+    return fs.createReadStream(filepath).pipe(res);
   }
 
-  res.set({
-    'Content-Type': 'audio/mpeg',
-    'Cache-Control': 'public, max-age=86400'
-  });
+  // On-demand generation: find the story text and generate this one clip
+  const voice = CHARACTER_VOICES[characterId];
+  if (!voice) return res.status(404).json({ error: 'Unknown character' });
+
+  // Find which mode has this story
+  let storyData = null;
+  const baseId = storyId.replace(/-headline$|-summary$/, '');
+  const isHeadline = storyId.endsWith('-headline');
+  for (const mode of ['everything', 'uponly', 'thisisfine']) {
+    const cache = loadCache(mode);
+    if (!cache) continue;
+    const found = cache.stories.find(s => s.id === baseId);
+    if (found) { storyData = found; break; }
+  }
+
+  if (!storyData) return res.status(404).json({ error: 'Story not found in cache' });
+
+  const text = isHeadline
+    ? storyData.headline
+    : ((energy === 'highkey' && storyData.summaryHighkey) ? storyData.summaryHighkey : storyData.summary);
+  const settings = VOICE_ENERGY_SETTINGS[`${energy}-${isHeadline ? 'headline' : 'summary'}`];
+
+  const result = await generateTTSForStory(characterId, storyId, text, voice.voiceId, energy, settings);
+  if (!result) return res.status(503).json({ error: 'TTS generation failed' });
+
+  res.set({ 'Content-Type': 'audio/mpeg', 'Cache-Control': 'public, max-age=86400' });
   fs.createReadStream(filepath).pipe(res);
+});
+
+// POST /api/prepare-character — kick off on-demand TTS generation for a character
+// Returns immediately; generation happens in background
+app.post('/api/prepare-character', (req, res) => {
+  const { characterId, mode = 'everything' } = req.body;
+  if (!CHARACTER_VOICES[characterId]) return res.status(400).json({ error: 'Unknown character' });
+  if (characterId === 'frog') return res.json({ status: 'ready', preGenerated: true });
+
+  // Check if all clips exist already
+  const cache = loadCache(mode);
+  if (!cache || !cache.stories) return res.json({ status: 'no_stories' });
+
+  const missing = cache.stories.some(story =>
+    !fs.existsSync(path.join(AUDIO_DIR, `${characterId}-${story.id}-headline-highkey.mp3`)) ||
+    !fs.existsSync(path.join(AUDIO_DIR, `${characterId}-${story.id}-summary-highkey.mp3`))
+  );
+
+  if (!missing) return res.json({ status: 'ready', preGenerated: true });
+
+  // Kick off generation in background
+  generateCharacterTTS(characterId, mode).catch(e => console.error('Char TTS error:', e));
+  res.json({ status: 'generating', characterId, mode });
+});
+
+// GET /api/character-status — check if a character's audio is ready
+app.get('/api/character-status/:characterId/:mode', (req, res) => {
+  const { characterId, mode } = req.params;
+  const cache = loadCache(mode);
+  if (!cache || !cache.stories) return res.json({ ready: false, total: 0, generated: 0 });
+
+  let total = 0, generated = 0;
+  for (const story of cache.stories) {
+    for (const energy of ['lowkey', 'highkey']) {
+      total += 2; // headline + summary
+      if (fs.existsSync(path.join(AUDIO_DIR, `${characterId}-${story.id}-headline-${energy}.mp3`))) generated++;
+      if (fs.existsSync(path.join(AUDIO_DIR, `${characterId}-${story.id}-summary-${energy}.mp3`))) generated++;
+    }
+  }
+
+  res.json({ ready: generated === total, total, generated, pct: total > 0 ? Math.round(generated / total * 100) : 0 });
 });
 
 // POST /api/tts — live TTS fallback (for stories without pre-generated audio)

@@ -293,6 +293,41 @@ body {
   #splash-go { font-size: 22px; padding: 12px 36px; }
 }
 
+/* Character Loading Overlay */
+#char-loading {
+  display: none;
+  position: absolute;
+  bottom: 70px; left: 50%;
+  transform: translateX(-50%);
+  background: rgba(10,10,26,0.92);
+  border: 1px solid var(--neon-cyan);
+  border-radius: 8px;
+  padding: 12px 24px;
+  text-align: center;
+  z-index: 50;
+  box-shadow: 0 0 20px rgba(0,240,255,0.2);
+  min-width: 220px;
+}
+#char-loading.visible { display: block; }
+#char-loading-text {
+  font-family: 'VT323', monospace;
+  font-size: 15px;
+  color: var(--neon-cyan);
+  margin-bottom: 6px;
+}
+#char-loading-bar {
+  width: 100%; height: 3px;
+  background: rgba(255,255,255,0.1);
+  border-radius: 2px;
+  overflow: hidden;
+}
+#char-loading-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--neon-cyan), var(--neon-pink));
+  transition: width 0.3s ease;
+  width: 0%;
+}
+
 /* Loading State */
 .loading-state {
   display: flex;
@@ -600,6 +635,7 @@ body.ui-hidden #char-name {
   <div id="viewport">
     <canvas id="broadcast-canvas"></canvas>
     <div id="crt-overlay"></div>
+    <div id="char-loading"><div id="char-loading-text"></div><div id="char-loading-bar"><div id="char-loading-fill"></div></div></div>
     <div id="char-name">RIBBITZ</div>
     <div id="viewport-controls">
       <div id="character-selector"></div>
@@ -4759,13 +4795,9 @@ class MaxHeadlineApp {
       this.speech.characterId = id;
       // Cancel any previous pending restart
       if (this._charSwitchTimer) clearTimeout(this._charSwitchTimer);
-      // Restart current story with new voice after a clean break
-      if (storyIdx >= 0) {
-        this._charSwitchTimer = setTimeout(() => {
-          this._charSwitchTimer = null;
-          this.playback.playStory(storyIdx);
-        }, 300);
-      }
+
+      // Trigger on-demand TTS in background + show loading if needed
+      this._prepareCharacterVoice(id, storyIdx);
     }
 
     // Update UI
@@ -4773,6 +4805,108 @@ class MaxHeadlineApp {
     document.querySelectorAll('#character-selector button').forEach(btn => {
       btn.classList.toggle('active', btn.dataset.char === id);
     });
+  }
+
+  // On-demand character voice preparation with creative loading states
+  async _prepareCharacterVoice(charId, storyIdx) {
+    const charName = CHARACTER_META[charId]?.name || charId;
+    const loadingEl = document.getElementById('char-loading');
+    const loadingText = document.getElementById('char-loading-text');
+    const loadingFill = document.getElementById('char-loading-fill');
+
+    // Creative loading messages per character
+    const loadingMessages = {
+      frog:    ['Ribbitz clearing throat...', 'Warming up the lily pad...', 'Catching flies for focus...'],
+      robot:   ['CHROM-E booting up...', 'Calibrating voice circuits...', 'Running diagnostics...'],
+      skull:   ['Mortimer rising from grave...', 'Reassembling jaw bone...', 'Dusting off the crypt...'],
+      fox:     ['Voxel stretching...', 'Sharpening those instincts...', 'Adjusting the fur...'],
+      octopus: ['Inkwell surfacing...', 'Untangling tentacles...', 'Squirting some ink...'],
+      alien:   ['Zyx-9 establishing contact...', 'Translating to Earth...', 'Adjusting frequencies...'],
+      owl:     ['Hootspa waking up...', 'Rotating head 270 degrees...', 'Getting reading glasses...'],
+      cat:     ['Whiskers napping... one sec...', 'Knocking things off desk...', 'Stretching... slowly...'],
+      wizard:  ['Glitch consulting the orb...', 'Gathering arcane notes...', 'Enchanting the mic...'],
+      mask:    ['Persona choosing a face...', 'Rehearsing emotions...', 'Stage makeup check...']
+    };
+
+    const msgs = loadingMessages[charId] || [`${charName} getting ready...`];
+
+    // Check if this character's audio is available for the current story
+    if (storyIdx >= 0 && this.newsEngine.stories.length > storyIdx) {
+      const story = this.newsEngine.stories[storyIdx];
+      const energy = currentEnergyMode;
+
+      // Quick check: does the first clip exist?
+      const testUrl = `/api/audio/${encodeURIComponent(charId)}/${encodeURIComponent(story.id)}-headline/${energy}`;
+      try {
+        const probe = await fetch(testUrl, { method: 'HEAD' });
+        if (probe.ok) {
+          // Audio ready — play immediately
+          this._charSwitchTimer = setTimeout(() => {
+            this._charSwitchTimer = null;
+            this.playback.playStory(storyIdx);
+          }, 200);
+          return;
+        }
+      } catch (e) {}
+
+      // Audio not ready — show loading, trigger on-demand generation
+      loadingEl.classList.add('visible');
+      loadingText.textContent = msgs[0];
+      loadingFill.style.width = '5%';
+
+      // Kick off server-side generation
+      fetch('/api/prepare-character', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ characterId: charId, mode: this.currentMode || 'everything' })
+      }).catch(() => {});
+
+      // Poll for the specific clip we need (not all — just the current story)
+      let msgIdx = 0;
+      const pollInterval = setInterval(async () => {
+        // Cycle loading messages
+        msgIdx = (msgIdx + 1) % msgs.length;
+        loadingText.textContent = msgs[msgIdx];
+
+        try {
+          const check = await fetch(testUrl, { method: 'HEAD' });
+          if (check.ok) {
+            // Ready!
+            clearInterval(pollInterval);
+            loadingFill.style.width = '100%';
+            loadingText.textContent = `${charName} is live!`;
+            setTimeout(() => {
+              loadingEl.classList.remove('visible');
+              if (this.currentCharacterId === charId) {
+                this.playback.playStory(storyIdx);
+              }
+            }, 600);
+          } else {
+            // Increment progress bar estimate
+            const w = parseFloat(loadingFill.style.width) || 5;
+            loadingFill.style.width = Math.min(90, w + 8) + '%';
+          }
+        } catch (e) {}
+      }, 2500);
+
+      // Timeout after 45s — fall back to Web Speech
+      setTimeout(() => {
+        clearInterval(pollInterval);
+        if (loadingEl.classList.contains('visible')) {
+          loadingEl.classList.remove('visible');
+          if (this.currentCharacterId === charId && storyIdx >= 0) {
+            this.playback.playStory(storyIdx);
+          }
+        }
+      }, 45000);
+
+    } else if (storyIdx >= 0) {
+      // No specific story context, just play
+      this._charSwitchTimer = setTimeout(() => {
+        this._charSwitchTimer = null;
+        this.playback.playStory(storyIdx);
+      }, 300);
+    }
   }
 
   // ---------- UI ----------
