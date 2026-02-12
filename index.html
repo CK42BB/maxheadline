@@ -241,18 +241,28 @@ body {
 /* ========== SPLASH SCREEN ========== */
 #splash {
   position: fixed; inset: 0; z-index: 9999;
-  background: var(--bg-deep);
+  background: rgba(10, 10, 26, 0.7);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
   display: flex; align-items: center; justify-content: center;
-  transition: opacity 0.6s ease, visibility 0.6s ease;
+  transition: opacity 0.8s ease, visibility 0.8s ease;
 }
 #splash.hidden { opacity: 0; visibility: hidden; pointer-events: none; }
-#splash-inner { text-align: center; }
+#splash-inner {
+  text-align: center;
+  background: rgba(18, 18, 42, 0.6);
+  border: 1px solid rgba(0, 240, 255, 0.15);
+  border-radius: 12px;
+  padding: 48px 64px;
+  box-shadow: 0 0 60px rgba(184, 41, 221, 0.15), 0 0 120px rgba(0, 240, 255, 0.08);
+}
 #splash-title {
   font-family: 'VT323', monospace;
   font-size: 64px;
   color: var(--neon-cyan);
   letter-spacing: 8px;
   margin-bottom: 4px;
+  text-shadow: 0 0 20px rgba(0, 240, 255, 0.5), 0 0 40px rgba(0, 240, 255, 0.2);
 }
 #splash-subtitle {
   font-family: 'Space Mono', monospace;
@@ -261,6 +271,7 @@ body {
   letter-spacing: 6px;
   text-transform: uppercase;
   margin-bottom: 40px;
+  text-shadow: 0 0 10px rgba(255, 45, 149, 0.4);
 }
 #splash-status {
   font-family: 'VT323', monospace;
@@ -290,6 +301,7 @@ body {
 #splash-go:active { transform: scale(0.97); }
 @media (max-width: 768px) {
   #splash-title { font-size: 40px; letter-spacing: 4px; }
+  #splash-inner { padding: 32px 24px; }
   #splash-go { font-size: 22px; padding: 12px 36px; }
 }
 
@@ -5179,6 +5191,12 @@ async function bootBackground() {
 
   try {
     await appInstance.initScene();
+
+    // Show the app and start rendering NOW — scene animates behind transparent splash
+    document.getElementById('app').classList.remove('app-hidden');
+    appInstance.onResize();
+    appInstance.renderer.setAnimationLoop(() => appInstance.animate());
+
     status.textContent = 'Scanning frequencies...';
     await appInstance.initNews();
   } catch (err) {
@@ -5225,19 +5243,14 @@ async function bootBackground() {
     // Create AudioContext inside user gesture
     appInstance.speech._ensureAudioContext();
 
-    // Fade out splash, show app
+    // Fade out transparent splash overlay
     splash.classList.add('hidden');
-    document.getElementById('app').classList.remove('app-hidden');
-
-    // Start render loop NOW that canvas is visible (fixes framebuffer errors)
-    appInstance.renderer.setAnimationLoop(() => appInstance.animate());
-    appInstance.onResize();
 
     // Start playback + lazy load audio in background
     appInstance.launchBroadcast();
 
-    // Remove splash from DOM after transition
-    setTimeout(() => splash.remove(), 700);
+    // Remove splash from DOM after fade transition
+    setTimeout(() => splash.remove(), 900);
   });
 }
 
