@@ -2,6 +2,7 @@ require('dotenv').config();
 const express = require('express');
 const fs = require('fs');
 const path = require('path');
+const { Pool } = require('pg');
 const app = express();
 
 app.use(express.json());
@@ -44,21 +45,69 @@ const CHARACTER_NAMES = {
 // HELPERS
 // =====================================================================
 
+// =====================================================================
+// POSTGRESQL PERSISTENT STORAGE — survives Railway deploys
+// =====================================================================
+const pool = process.env.DATABASE_URL
+  ? new Pool({ connectionString: process.env.DATABASE_URL, ssl: { rejectUnauthorized: false } })
+  : null;
+
+async function initDB() {
+  if (!pool) {
+    console.log('[DB] No DATABASE_URL — falling back to JSON file cache');
+    return;
+  }
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS story_cache (
+      mode TEXT NOT NULL,
+      data JSONB NOT NULL,
+      updated_at TIMESTAMPTZ DEFAULT NOW(),
+      PRIMARY KEY (mode)
+    )
+  `);
+  console.log('[DB] PostgreSQL connected, story_cache table ready');
+}
+
 function getCacheFile(mode) {
   return path.join(DATA_DIR, `stories-${mode}.json`);
 }
 
-function loadCache(mode) {
+async function loadCache(mode) {
+  // Try Postgres first
+  if (pool) {
+    try {
+      const res = await pool.query('SELECT data FROM story_cache WHERE mode = $1', [mode]);
+      if (res.rows.length > 0) return res.rows[0].data;
+      return null;
+    } catch (err) {
+      console.error('[DB] loadCache error:', err.message);
+    }
+  }
+  // Fallback to file
   const file = getCacheFile(mode);
   if (!fs.existsSync(file)) return null;
   try {
-    const data = JSON.parse(fs.readFileSync(file, 'utf8'));
-    return data;
+    return JSON.parse(fs.readFileSync(file, 'utf8'));
   } catch { return null; }
 }
 
-function saveCache(mode, data) {
-  fs.writeFileSync(getCacheFile(mode), JSON.stringify(data, null, 2));
+async function saveCache(mode, data) {
+  // Write to Postgres
+  if (pool) {
+    try {
+      await pool.query(
+        `INSERT INTO story_cache (mode, data, updated_at) VALUES ($1, $2, NOW())
+         ON CONFLICT (mode) DO UPDATE SET data = $2, updated_at = NOW()`,
+        [mode, JSON.stringify(data)]
+      );
+    } catch (err) {
+      console.error('[DB] saveCache error:', err.message);
+    }
+  }
+  // Also write file as local backup
+  try {
+    fs.writeFileSync(getCacheFile(mode), JSON.stringify(data, null, 2));
+  } catch {}
 }
 
 const STORY_TTL_MS = 48 * 60 * 60 * 1000; // 48 hours
@@ -485,7 +534,7 @@ async function generateCharacterTTS(characterId, mode) {
   const voice = CHARACTER_VOICES[characterId];
   if (!voice) { _generatingCharacters.delete(key); return; }
 
-  const cache = loadCache(mode);
+  const cache = await loadCache(mode);
   if (!cache || !cache.stories) { _generatingCharacters.delete(key); return; }
 
   console.log(`On-demand TTS: generating ${characterId} for ${mode}...`);
@@ -524,7 +573,7 @@ async function refreshNews(mode = 'everything') {
     console.log(`\n=== Refreshing ${mode} news at ${new Date().toLocaleString('en-US', { timeZone: 'America/New_York' })} ET ===`);
 
     // Load existing stories and prune expired (>48h)
-    const existing = loadCache(mode);
+    const existing = await loadCache(mode);
     const survivingStories = existing ? pruneExpiredStories(existing.stories || []) : [];
     const prunedCount = (existing?.stories?.length || 0) - survivingStories.length;
     if (prunedCount > 0) console.log(`Pruned ${prunedCount} expired stories (>48h)`);
@@ -564,7 +613,7 @@ async function refreshNews(mode = 'everything') {
       fetchedAtET: new Date().toLocaleString('en-US', { timeZone: 'America/New_York' }),
       lastRefreshET: new Date().toLocaleString('en-US', { timeZone: 'America/New_York' })
     };
-    saveCache(mode, cacheData);
+    await saveCache(mode, cacheData);
     console.log(`Cached ${mode} stories`);
 
     // Generate TTS audio for new stories only (default voice — frog/Ribbitz)
@@ -620,9 +669,9 @@ function scheduleNextRefresh() {
 // =====================================================================
 
 // GET /api/stories?mode=everything — serve cached stories
-app.get('/api/stories', (req, res) => {
+app.get('/api/stories', async (req, res) => {
   const mode = req.query.mode || 'everything';
-  const cache = loadCache(mode);
+  const cache = await loadCache(mode);
 
   if (!cache) {
     return res.status(404).json({ error: 'No cached stories yet. Refresh in progress...' });
@@ -634,7 +683,7 @@ app.get('/api/stories', (req, res) => {
 // POST /api/news — legacy endpoint, serves cache only (refreshes happen on 6am/6pm schedule)
 app.post('/api/news', async (req, res) => {
   const { mode = 'everything' } = req.body;
-  const cache = loadCache(mode);
+  const cache = await loadCache(mode);
 
   if (cache && cache.stories && cache.stories.length > 0) {
     return res.json({ stories: cache.stories });
@@ -644,7 +693,7 @@ app.post('/api/news', async (req, res) => {
   if (!isRefreshing) {
     try {
       await refreshNews(mode);
-      const freshCache = loadCache(mode);
+      const freshCache = await loadCache(mode);
       if (freshCache) {
         return res.json({ stories: freshCache.stories });
       }
@@ -679,7 +728,7 @@ app.get('/api/audio/:characterId/:storyId/:energy', async (req, res) => {
   const baseId = storyId.replace(/-headline$|-summary$/, '');
   const isHeadline = storyId.endsWith('-headline');
   for (const mode of ['everything', 'uponly', 'thisisfine']) {
-    const cache = loadCache(mode);
+    const cache = await loadCache(mode);
     if (!cache) continue;
     const found = cache.stories.find(s => s.id === baseId);
     if (found) { storyData = found; break; }
@@ -702,13 +751,13 @@ app.get('/api/audio/:characterId/:storyId/:energy', async (req, res) => {
 
 // POST /api/prepare-character — kick off on-demand TTS generation for a character
 // Returns immediately; generation happens in background
-app.post('/api/prepare-character', (req, res) => {
+app.post('/api/prepare-character', async (req, res) => {
   const { characterId, mode = 'everything' } = req.body;
   if (!CHARACTER_VOICES[characterId]) return res.status(400).json({ error: 'Unknown character' });
   if (characterId === 'frog') return res.json({ status: 'ready', preGenerated: true });
 
   // Check if all clips exist already
-  const cache = loadCache(mode);
+  const cache = await loadCache(mode);
   if (!cache || !cache.stories) return res.json({ status: 'no_stories' });
 
   const missing = cache.stories.some(story =>
@@ -724,9 +773,9 @@ app.post('/api/prepare-character', (req, res) => {
 });
 
 // GET /api/character-status — check if a character's audio is ready
-app.get('/api/character-status/:characterId/:mode', (req, res) => {
+app.get('/api/character-status/:characterId/:mode', async (req, res) => {
   const { characterId, mode } = req.params;
-  const cache = loadCache(mode);
+  const cache = await loadCache(mode);
   if (!cache || !cache.stories) return res.json({ ready: false, total: 0, generated: 0 });
 
   let total = 0, generated = 0;
@@ -1015,7 +1064,7 @@ app.get('/api/ticker', async (req, res) => {
 // POST /api/regen-tts — regenerate missing TTS audio from cached stories
 app.post('/api/regen-tts', async (req, res) => {
   const { mode = 'everything' } = req.body;
-  const cache = loadCache(mode);
+  const cache = await loadCache(mode);
   if (!cache) return res.json({ status: 'no cached stories for ' + mode });
   res.json({ status: 'tts regen started for ' + mode });
   generateAllTTS(cache.stories, 'frog').catch(err => console.error('TTS regen error:', err));
@@ -1053,9 +1102,12 @@ const PORT = process.env.PORT || 3000;
 app.listen(PORT, async () => {
   console.log(`MaxHeadline running on http://localhost:${PORT}`);
 
+  // Initialize PostgreSQL if available
+  await initDB();
+
   // Backfill addedAt on old stories that don't have it, then prune expired (>48h)
   for (const mode of ['everything', 'uponly', 'thisisfine']) {
-    const cache = loadCache(mode);
+    const cache = await loadCache(mode);
     if (cache && cache.stories) {
       // Backfill addedAt using the cache-level fetchedAt for legacy stories
       let dirty = false;
@@ -1072,15 +1124,16 @@ app.listen(PORT, async () => {
         console.log(`[${mode}] Pruned ${before - cache.stories.length} expired stories on startup`);
         dirty = true;
       }
-      if (dirty) saveCache(mode, cache);
+      if (dirty) await saveCache(mode, cache);
     }
   }
 
   // Check if we have cached stories; if not, do an initial fetch
-  const hasCache = ['everything', 'uponly', 'thisisfine'].some(m => {
-    const c = loadCache(m);
-    return c && c.stories && c.stories.length > 0;
-  });
+  let hasCache = false;
+  for (const m of ['everything', 'uponly', 'thisisfine']) {
+    const c = await loadCache(m);
+    if (c && c.stories && c.stories.length > 0) { hasCache = true; break; }
+  }
   if (!hasCache) {
     console.log('No cached stories found — doing initial fetch...');
     await refreshNews('everything');
