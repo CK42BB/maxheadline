@@ -23,7 +23,7 @@ const CHARACTER_VOICES = {
   frog:    { voiceId: 'IKne3meq5aSn9XLyUdCD', name: 'Charlie' },
   robot:   { voiceId: 'onwK4e9ZLuTAKqWW03F9', name: 'Daniel' },
   skull:   { voiceId: 'nPczCjzI2devNBz1zQrb', name: 'Brian' },
-  fox:     { voiceId: 'VURZ3kCSkbLjDYld5lne', name: 'Celeste' },
+  fox:     { voiceId: 'oW8bn5YtBB89X2nJ0DT9', name: 'Voxel' },
   owl:     { voiceId: 'CwhRBWXzGAHq8TQ4Fs17', name: 'Roger' },
   cat:     { voiceId: 'cgSgspJ2msm6clMCkdW9', name: 'Jessica' },
   wizard:  { voiceId: 'cjVigY5qzO86Huf0OWal', name: 'Eric' }
