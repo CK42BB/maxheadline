@@ -1768,6 +1768,8 @@ class FrogCharacter extends CharacterBase {
     });
     // Tilt glasses so bottom edge angles into the face — exposes nose
     if (this.sunglasses) this.sunglasses.rotation.x = 18 * Math.PI / 180;
+    // Scale down to match other characters (~20% smaller)
+    this.group.scale.setScalar(0.82);
     return this.group;
   }
 
