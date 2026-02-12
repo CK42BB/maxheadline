@@ -4037,8 +4037,8 @@ class MaxHeadlineApp {
         );
         mesh.scale.setScalar(1 + Math.random() * 1.5);
       }
-      mesh.userData.floatSpeed = 0.2 + Math.random() * 0.6;
-      mesh.userData.rotSpeed = 0.3 + Math.random() * 1.0;
+      mesh.userData.floatSpeed = 0.08 + Math.random() * 0.15;
+      mesh.userData.rotSpeed = 0.06 + Math.random() * 0.14;
       mesh.userData.baseY = mesh.position.y;
       mesh.userData.orbitRadius = 0.3 + Math.random() * 0.5;
       mesh.userData.orbitSpeed = 0.1 + Math.random() * 0.3;
@@ -4062,8 +4062,8 @@ class MaxHeadlineApp {
         -4 - Math.random() * 6
       );
       mesh.scale.setScalar(0.8 + Math.random() * 1.2);
-      mesh.userData.floatSpeed = 0.15 + Math.random() * 0.3;
-      mesh.userData.rotSpeed = 0.2 + Math.random() * 0.5;
+      mesh.userData.floatSpeed = 0.06 + Math.random() * 0.12;
+      mesh.userData.rotSpeed = 0.04 + Math.random() * 0.1;
       mesh.userData.baseY = mesh.position.y;
       mesh.userData.orbitRadius = 0;
       mesh.userData.orbitSpeed = 0;
@@ -4227,9 +4227,9 @@ class MaxHeadlineApp {
 
       const cube = new THREE.Mesh(new THREE.BoxGeometry(size, size, size), materials);
 
-      const rotX = (0.01 + Math.random() * 0.04) * (Math.random() < 0.5 ? 1 : -1);
-      const rotY = (0.015 + Math.random() * 0.05) * (Math.random() < 0.5 ? 1 : -1);
-      const rotZ = (0.005 + Math.random() * 0.02) * (Math.random() < 0.5 ? 1 : -1);
+      const rotX = (0.03 + Math.random() * 0.08) * (Math.random() < 0.5 ? 1 : -1);
+      const rotY = (0.04 + Math.random() * 0.1) * (Math.random() < 0.5 ? 1 : -1);
+      const rotZ = (0.015 + Math.random() * 0.05) * (Math.random() < 0.5 ? 1 : -1);
 
       const patternFn = patterns[c % patterns.length];
       const motion = patternFn();
@@ -4333,9 +4333,9 @@ class MaxHeadlineApp {
 
       // Slow 3D tumble
       mesh.userData.memeShape = true;
-      mesh.userData.rotX = (0.005 + Math.random() * 0.02) * (Math.random() < 0.5 ? 1 : -1);
-      mesh.userData.rotY = (0.01 + Math.random() * 0.03) * (Math.random() < 0.5 ? 1 : -1);
-      mesh.userData.rotZ = (0.003 + Math.random() * 0.01) * (Math.random() < 0.5 ? 1 : -1);
+      mesh.userData.rotX = (0.02 + Math.random() * 0.06) * (Math.random() < 0.5 ? 1 : -1);
+      mesh.userData.rotY = (0.03 + Math.random() * 0.08) * (Math.random() < 0.5 ? 1 : -1);
+      mesh.userData.rotZ = (0.01 + Math.random() * 0.04) * (Math.random() < 0.5 ? 1 : -1);
       mesh.userData.floatSpeed = 0.15 + Math.random() * 0.4;
       mesh.userData.baseY = mesh.position.y;
       mesh.userData.baseX = mesh.position.x;
@@ -5047,10 +5047,10 @@ class MaxHeadlineApp {
     // Floating props — rotation + float + orbital drift
     this.floatingProps.forEach(mesh => {
       if (mesh.userData.memeShape) {
-        // Meme shapes: full 3-axis tumble
-        mesh.rotation.x += mesh.userData.rotX;
-        mesh.rotation.y += mesh.userData.rotY;
-        mesh.rotation.z += mesh.userData.rotZ;
+        // Meme shapes: full 3-axis tumble (delta-scaled for smooth, slow rotation)
+        mesh.rotation.x += mesh.userData.rotX * delta;
+        mesh.rotation.y += mesh.userData.rotY * delta;
+        mesh.rotation.z += mesh.userData.rotZ * delta;
       } else {
         mesh.rotation.x += mesh.userData.rotSpeed * delta;
         mesh.rotation.y += mesh.userData.rotSpeed * 0.7 * delta;
@@ -5068,15 +5068,15 @@ class MaxHeadlineApp {
 
     // Neon rings — rotate and pulse
     if (this.neonRing) {
-      this.neonRing.rotation.z = elapsed * 0.15;
-      this.neonRing.rotation.x = Math.sin(elapsed * 0.3) * 0.1;
+      this.neonRing.rotation.z = elapsed * 0.06;
+      this.neonRing.rotation.x = Math.sin(elapsed * 0.15) * 0.08;
       this.neonRing.material.opacity = 0.4 + 0.3 * Math.sin(elapsed * 2);
       // Expand ring when speaking
       const ringScale = this.speech.isSpeaking ? 1 + this.speechAmplitude * 0.15 : 1;
       this.neonRing.scale.setScalar(ringScale);
     }
     if (this.neonRing2) {
-      this.neonRing2.rotation.z = -elapsed * 0.1 + 0.3;
+      this.neonRing2.rotation.z = -elapsed * 0.04 + 0.3;
       this.neonRing2.material.opacity = 0.3 + 0.2 * Math.sin(elapsed * 1.5 + 1);
     }
 
