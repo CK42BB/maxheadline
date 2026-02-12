@@ -3152,6 +3152,12 @@ class SpeechManager {
   // Falls back to frog's pre-generated audio if current character has none
   async fetchAudio(storyId) {
     if (!storyId) return null;
+
+    // Check in-memory cache first (used by splash pre-load)
+    if (this._audioCache && this._audioCache[storyId]) {
+      return this._audioCache[storyId];
+    }
+
     const energy = currentEnergyMode;
     try {
       this._ensureAudioContext();
@@ -4136,8 +4142,7 @@ class MaxHeadlineApp {
     // UI
     this.setupUI();
 
-    // Start render loop
-    this.renderer.setAnimationLoop(() => this.animate());
+    // Render loop starts in launchBroadcast() after splash dismisses (avoids zero-size framebuffer errors)
 
     // Resize
     window.addEventListener('resize', () => this.onResize());
@@ -4178,19 +4183,28 @@ class MaxHeadlineApp {
 
   // Phase 3: User clicked "LET'S NEWS" — AudioContext is active, start playback
   async launchBroadcast() {
-    // Pre-fetch first story audio before starting playback
     if (this.newsEngine.stories.length > 0) {
-      const firstStory = this.newsEngine.stories[0];
+      // Play intro line
       try {
-        // Pre-fetch intro + first story audio in parallel
-        const introPromise = this.speech.fetchTTSBuffer("Here's what happened today.", 'amused', true);
-        const headlinePromise = this.speech.fetchAudio(`${firstStory.id}-headline`);
-        const summaryPromise = this.speech.fetchAudio(`${firstStory.id}-summary`);
-        const [introBuf] = await Promise.all([introPromise, headlinePromise, summaryPromise]);
-
-        // Play intro
+        const introBuf = await this.speech.fetchTTSBuffer("Here's what happened today.", 'amused', true);
         if (introBuf) await this.speech.playBuffer(introBuf, 'amused');
       } catch (e) { /* skip intro if TTS unavailable */ }
+
+      // If we have pre-loaded audio from splash, decode and cache it now
+      if (this._preloadedHeadline && this._preloadedSummary) {
+        try {
+          const firstStory = this.newsEngine.stories[0];
+          const ctx = this.speech.audioContext;
+          const hBuf = await ctx.decodeAudioData(this._preloadedHeadline);
+          const sBuf = await ctx.decodeAudioData(this._preloadedSummary);
+          // Cache decoded buffers so playStory finds them instantly
+          this.speech._audioCache = this.speech._audioCache || {};
+          this.speech._audioCache[`${firstStory.id}-headline`] = this.speech._trimTrailingSilence(hBuf);
+          this.speech._audioCache[`${firstStory.id}-summary`] = this.speech._trimTrailingSilence(sBuf);
+        } catch (e) { /* decode failed, playStory will fetch normally */ }
+        this._preloadedHeadline = null;
+        this._preloadedSummary = null;
+      }
 
       // Start autoplay
       this.playback.isAutoplay = true;
@@ -4812,7 +4826,7 @@ class MaxHeadlineApp {
       img.className = 'char-icon';
       img.draggable = false;
       btn.appendChild(img);
-      if (id === 'frog') btn.classList.add('active');
+      if (id === this.currentCharacterId) btn.classList.add('active');
       btn.addEventListener('click', () => {
         this.switchCharacter(id);
         if (this.currentCharacter) this.currentCharacter.triggerGlitch();
@@ -5229,24 +5243,56 @@ async function bootBackground() {
     await appInstance.initScene();
     status.textContent = 'Scanning frequencies...';
     await appInstance.initNews();
-    status.textContent = 'Signal locked.';
   } catch (err) {
     console.error('Init failed:', err);
-    status.textContent = 'Broadcast ready.';
   }
+
+  // Phase 2: Pre-load first story audio so it's ready before button click
+  let firstAudioReady = false;
+  if (appInstance.newsEngine.stories.length > 0) {
+    status.textContent = 'Tuning voice circuits...';
+    const firstStory = appInstance.newsEngine.stories[0];
+    try {
+      const headlineRes = await fetch(`/api/audio/${encodeURIComponent(appInstance.currentCharacterId)}/${encodeURIComponent(firstStory.id)}-headline/${currentEnergyMode}`);
+      const summaryRes = await fetch(`/api/audio/${encodeURIComponent(appInstance.currentCharacterId)}/${encodeURIComponent(firstStory.id)}-summary/${currentEnergyMode}`);
+      if (headlineRes.ok && summaryRes.ok) {
+        // Cache the raw array buffers for instant decode on launch
+        appInstance._preloadedHeadline = await headlineRes.arrayBuffer();
+        appInstance._preloadedSummary = await summaryRes.arrayBuffer();
+        firstAudioReady = true;
+      } else {
+        // Try frog fallback
+        const frogH = await fetch(`/api/audio/frog/${encodeURIComponent(firstStory.id)}-headline/${currentEnergyMode}`);
+        const frogS = await fetch(`/api/audio/frog/${encodeURIComponent(firstStory.id)}-summary/${currentEnergyMode}`);
+        if (frogH.ok && frogS.ok) {
+          appInstance._preloadedHeadline = await frogH.arrayBuffer();
+          appInstance._preloadedSummary = await frogS.arrayBuffer();
+          firstAudioReady = true;
+        }
+      }
+    } catch (e) { /* audio preload failed, will try live TTS */ }
+  }
+
+  status.textContent = firstAudioReady ? 'Signal locked.' : 'Broadcast ready.';
 
   // Show the button, hide loading bar
   bar.style.display = 'none';
   goBtn.style.display = 'inline-block';
 
-  // Phase 2: User clicks "LET'S NEWS" — satisfies AudioContext gesture
+  // Phase 3: User clicks "LET'S NEWS" — satisfies AudioContext gesture
   goBtn.addEventListener('click', () => {
+    goBtn.disabled = true;
+    goBtn.textContent = 'GOING LIVE...';
+
     // Create AudioContext inside user gesture
     appInstance.speech._ensureAudioContext();
 
     // Fade out splash, show app
     splash.classList.add('hidden');
     document.getElementById('app').classList.remove('app-hidden');
+
+    // Start render loop NOW that canvas is visible (fixes framebuffer errors)
+    appInstance.renderer.setAnimationLoop(() => appInstance.animate());
     appInstance.onResize();
 
     // Start playback + lazy load audio in background
