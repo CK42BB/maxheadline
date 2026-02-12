@@ -4066,15 +4066,15 @@ class MaxHeadlineApp {
     ];
     const colors = MODE_BACKGROUNDS.everything.propColors;
 
-    // Large background wireframes
-    for (let i = 0; i < 20; i++) {
+    // Large background wireframes (reduced — meme shapes fill the rest)
+    for (let i = 0; i < 10; i++) {
       const geo = shapes[i % shapes.length];
       const color = colors[i % colors.length];
       const mat = new THREE.MeshBasicMaterial({
         color, wireframe: true, transparent: true, opacity: 0.4 + Math.random() * 0.3
       });
       const mesh = new THREE.Mesh(geo, mat);
-      const layer = i < 8 ? 'near' : 'far';
+      const layer = i < 4 ? 'near' : 'far';
       if (layer === 'near') {
         mesh.position.set(
           (Math.random() - 0.5) * 6,
@@ -4125,9 +4125,11 @@ class MaxHeadlineApp {
       this.scene.add(mesh);
     }
 
-    // === MEME CUBES — loaded async, added to scene when ready ===
+    // === MEME SHAPES — textured polygons (4-8 sides) + cubes ===
     this.memeCubes = [];
+    this.memeShapes = [];
     this._loadMemeCubes();
+    this._loadMemeShapes();
 
     // === PARTICLE SYSTEM — floating sparkle field ===
     const particleCount = 300;
@@ -4294,6 +4296,94 @@ class MaxHeadlineApp {
     }
   }
 
+  // ========== MEME SHAPES — 4 to 8 sided polygonal prisms with meme textures ==========
+  async _loadMemeShapes() {
+    try {
+      const res = await fetch('/api/memes');
+      const files = await res.json();
+      if (!files.length) return;
+
+      // Use a separate shuffle from meme cubes — pick from the back of the list
+      const shuffled = files.sort(() => Math.random() - 0.5);
+      const SHAPE_COUNT = Math.min(10, Math.floor(shuffled.length / 3));
+      if (SHAPE_COUNT === 0) return;
+
+      const loader = new THREE.TextureLoader();
+
+      // Geometry generators for 4-8 sided prisms/polygons
+      const makePolygonGeo = (sides, radius, depth) => {
+        return new THREE.CylinderGeometry(radius, radius, depth, sides, 1);
+      };
+
+      for (let i = 0; i < SHAPE_COUNT; i++) {
+        const sides = 4 + (i % 5); // cycles through 4, 5, 6, 7, 8 sides
+        const radius = 0.3 + Math.random() * 0.5;
+        const depth = 0.08 + Math.random() * 0.15;
+        const geo = makePolygonGeo(sides, radius, depth);
+
+        // Load one meme texture for each shape
+        const imgFile = shuffled[(SHAPE_COUNT * 6) + i] || shuffled[i % shuffled.length];
+        const tex = loader.load(`/memes/${encodeURIComponent(imgFile)}`);
+        tex.minFilter = THREE.LinearMipmapLinearFilter;
+        tex.magFilter = THREE.LinearFilter;
+        tex.colorSpace = THREE.SRGBColorSpace;
+
+        const opacity = 0.25 + Math.random() * 0.65;
+        // CylinderGeometry has 3 material groups: side, top cap, bottom cap
+        const sideMat = new THREE.MeshStandardMaterial({
+          color: 0x333333, transparent: true, opacity: opacity * 0.5,
+          roughness: 0.3, metalness: 0.6, emissive: 0x111111, emissiveIntensity: 0.2
+        });
+        const capMat = new THREE.MeshStandardMaterial({
+          map: tex, transparent: true, opacity,
+          roughness: 0.4, metalness: 0.1,
+          emissive: 0x222222, emissiveIntensity: 0.3
+        });
+
+        const mesh = new THREE.Mesh(geo, [sideMat, capMat, capMat]);
+
+        // Position scattered around the scene
+        const isFar = i >= SHAPE_COUNT / 2;
+        if (isFar) {
+          mesh.position.set(
+            (Math.random() - 0.5) * 14,
+            (Math.random() - 0.5) * 5 + 1,
+            -5 - Math.random() * 8
+          );
+          mesh.scale.setScalar(1.0 + Math.random() * 1.2);
+        } else {
+          mesh.position.set(
+            (Math.random() - 0.5) * 8,
+            (Math.random() - 0.5) * 3 + 0.5,
+            -2 - Math.random() * 4
+          );
+          mesh.scale.setScalar(0.5 + Math.random() * 0.6);
+        }
+
+        // Tilt so the meme faces camera (rotate to show flat face)
+        mesh.rotation.x = Math.PI / 2 + (Math.random() - 0.5) * 0.4;
+        mesh.rotation.y = Math.random() * Math.PI * 2;
+
+        // Slow tumble
+        mesh.userData.memeShape = true;
+        mesh.userData.rotX = (0.005 + Math.random() * 0.02) * (Math.random() < 0.5 ? 1 : -1);
+        mesh.userData.rotY = (0.01 + Math.random() * 0.03) * (Math.random() < 0.5 ? 1 : -1);
+        mesh.userData.rotZ = (0.003 + Math.random() * 0.01) * (Math.random() < 0.5 ? 1 : -1);
+        mesh.userData.floatSpeed = 0.15 + Math.random() * 0.4;
+        mesh.userData.baseY = mesh.position.y;
+        mesh.userData.baseX = mesh.position.x;
+        mesh.userData.orbitRadius = 0.2 + Math.random() * 0.6;
+        mesh.userData.orbitSpeed = 0.03 + Math.random() * 0.08;
+
+        this.scene.add(mesh);
+        this.memeShapes.push(mesh);
+        this.floatingProps.push(mesh); // so mode color changes affect them
+      }
+    } catch (e) {
+      console.warn('Meme shapes failed to load:', e);
+    }
+  }
+
   _updateMemeCubes(elapsed, delta) {
     this.memeCubes.forEach(cube => {
       const m = cube.userData.motion;
@@ -4437,9 +4527,12 @@ class MaxHeadlineApp {
       this.scene.add(this.gridHelper);
     }
 
-    // Props
+    // Props (skip meme-textured shapes — they keep their own materials)
     this.floatingProps.forEach((mesh, i) => {
-      mesh.material.color.setHex(bg.propColors[i % bg.propColors.length]);
+      if (mesh.userData.memeShape || mesh.userData.memeCube) return;
+      if (mesh.material && mesh.material.color) {
+        mesh.material.color.setHex(bg.propColors[i % bg.propColors.length]);
+      }
     });
 
     // Neon ring color per mode
@@ -4907,14 +5000,21 @@ class MaxHeadlineApp {
 
     // Floating props — rotation + float + orbital drift
     this.floatingProps.forEach(mesh => {
-      mesh.rotation.x += mesh.userData.rotSpeed * delta;
-      mesh.rotation.y += mesh.userData.rotSpeed * 0.7 * delta;
+      if (mesh.userData.memeShape) {
+        // Meme shapes: full 3-axis tumble
+        mesh.rotation.x += mesh.userData.rotX;
+        mesh.rotation.y += mesh.userData.rotY;
+        mesh.rotation.z += mesh.userData.rotZ;
+      } else {
+        mesh.rotation.x += mesh.userData.rotSpeed * delta;
+        mesh.rotation.y += mesh.userData.rotSpeed * 0.7 * delta;
+      }
       mesh.position.y = mesh.userData.baseY + Math.sin(elapsed * mesh.userData.floatSpeed) * 0.4;
       if (mesh.userData.orbitRadius > 0) {
         mesh.position.x = mesh.userData.baseX + Math.sin(elapsed * mesh.userData.orbitSpeed) * mesh.userData.orbitRadius;
       }
       // Pulse opacity with speech
-      if (this.speech.isSpeaking && mesh.material.opacity !== undefined) {
+      if (this.speech.isSpeaking && mesh.material && mesh.material.opacity !== undefined) {
         const pulse = 0.1 * this.speechAmplitude * Math.sin(elapsed * 4 + mesh.userData.floatSpeed * 10);
         mesh.material.opacity = Math.min(1, mesh.material.opacity + pulse);
       }
