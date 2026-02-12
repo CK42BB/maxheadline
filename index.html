@@ -3367,6 +3367,7 @@ class StoryHeroImage {
         depthWrite: false
       })
     );
+    this.mesh.renderOrder = -2; // behind ticker (-1) and character (0)
     scene.add(this.mesh);
 
     // Neon border frame (thin box wireframe around the image)
