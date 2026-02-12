@@ -24,7 +24,6 @@ const CHARACTER_VOICES = {
   robot:   { voiceId: 'onwK4e9ZLuTAKqWW03F9', name: 'Daniel' },
   skull:   { voiceId: 'nPczCjzI2devNBz1zQrb', name: 'Brian' },
   fox:     { voiceId: 'VURZ3kCSkbLjDYld5lne', name: 'Celeste' },
-  octopus: { voiceId: 'pqHfZKP75CvOlQylNhV4', name: 'Bill' },
   owl:     { voiceId: 'CwhRBWXzGAHq8TQ4Fs17', name: 'Roger' },
   cat:     { voiceId: 'cgSgspJ2msm6clMCkdW9', name: 'Jessica' },
   wizard:  { voiceId: 'cjVigY5qzO86Huf0OWal', name: 'Eric' }
@@ -38,7 +37,7 @@ const VOICE_ENERGY_SETTINGS = {
 
 const CHARACTER_NAMES = {
   frog: 'Ribbitz', robot: 'CHROM-E', skull: 'Mortimer', fox: 'Voxel',
-  octopus: 'Inkwell', owl: 'Hootspa', cat: 'Whiskers', wizard: 'Glitch'
+  owl: 'Hootspa', cat: 'Whiskers', wizard: 'Glitch'
 };
 
 // =====================================================================
@@ -1048,8 +1047,27 @@ async function fetchTickerData() {
 
   if (results.length > 0) {
     tickerCache = { data: results, fetchedAt: Date.now() };
+    return results;
   }
-  return results;
+
+  // Yahoo completely failed — return last known data if available, else static fallback
+  if (tickerCache.data.length > 0) {
+    console.log('[Ticker] Yahoo failed, serving stale cache');
+    return tickerCache.data;
+  }
+  console.log('[Ticker] Yahoo failed, serving static fallback');
+  return [
+    { symbol: 'DJI', price: 44200, change: 0.12, up: true },
+    { symbol: 'SPX', price: 6050, change: 0.08, up: true },
+    { symbol: 'BTC', price: 97500, change: 1.45, up: true },
+    { symbol: 'ETH', price: 2650, change: -0.32, up: false },
+    { symbol: 'GOLD', price: 2920, change: 0.25, up: true },
+    { symbol: 'AAPL', price: 232, change: -0.18, up: false },
+    { symbol: 'NVDA', price: 128, change: 2.1, up: true },
+    { symbol: 'TSLA', price: 345, change: 1.8, up: true },
+    { symbol: 'GOOG', price: 188, change: 0.45, up: true },
+    { symbol: 'META', price: 725, change: 0.67, up: true }
+  ];
 }
 
 app.get('/api/ticker', async (req, res) => {

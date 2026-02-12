@@ -741,7 +741,6 @@ const CHARACTER_META = {
   robot:   { emoji: '\u{1F916}', name: 'CHROM-E',  color: 0x78909C },
   skull:   { emoji: '\u{1F480}', name: 'Mortimer', color: 0xECEFF1 },
   fox:     { emoji: '\u{1F98A}', name: 'Voxel',    color: 0xFF6D00 },
-  octopus: { emoji: '\u{1F419}', name: 'Inkwell',  color: 0xAB47BC },
   owl:     { emoji: '\u{1F989}', name: 'Hootspa',  color: 0x8D6E63 },
   cat:     { emoji: '\u{1F431}', name: 'Whiskers', color: 0xFFB74D },
   wizard:  { emoji: '\u{1F9D9}', name: 'Glitch',   color: 0x7C4DFF }
@@ -2252,126 +2251,7 @@ class FoxCharacter extends CharacterBase {
 }
 
 // =====================================================================
-// 5. OCTOPUS — Inkwell
-// =====================================================================
-class OctopusCharacter extends CharacterBase {
-  build() {
-    const headGeo = new THREE.SphereGeometry(0.55, 8, 6);
-    headGeo.scale(1, 1.15, 1);
-    this.head = new THREE.Mesh(headGeo, new THREE.MeshStandardMaterial({ color: 0xAB47BC, flatShading: true }));
-    this.group.add(this.head);
-
-    // Large eyes
-    const eyeGeo = new THREE.SphereGeometry(0.16, 6, 4);
-    const eyeWhite = new THREE.MeshStandardMaterial({ color: 0xffffff, flatShading: true });
-    const pupilGeo = new THREE.SphereGeometry(0.08, 6, 4);
-    const pupilMat = new THREE.MeshStandardMaterial({ color: 0x111111 });
-    [-0.25, 0.25].forEach(x => {
-      const eg = new THREE.Group();
-      eg.add(new THREE.Mesh(eyeGeo, eyeWhite));
-      const p = new THREE.Mesh(pupilGeo, pupilMat);
-      p.position.z = 0.1;
-      eg.add(p);
-      eg.position.set(x, 0.05, 0.4);
-      this.eyes.push(eg);
-      this.group.add(eg);
-    });
-
-    // Beak mouth
-    const beakTop = new THREE.Mesh(
-      new THREE.ConeGeometry(0.06, 0.08, 3),
-      new THREE.MeshStandardMaterial({ color: 0x4A148C, flatShading: true })
-    );
-    beakTop.position.set(0, -0.18, 0.48);
-    beakTop.rotation.x = Math.PI * 0.7;
-    this.mouth = beakTop;
-    this.group.add(beakTop);
-
-    // Tentacles — 3x larger, anchored symmetrically under body
-    this.tentacles = [];
-    this.tentacleGroups = [];
-    for (let i = 0; i < 6; i++) {
-      // Spread evenly in a semicircle below body, centered
-      const angle = (i / 5) * Math.PI - Math.PI * 0.5;
-      const tGroup = new THREE.Group();
-      tGroup.position.set(Math.sin(angle) * 0.25, -0.5, Math.cos(angle) * 0.1);
-      tGroup.rotation.z = Math.sin(angle) * 0.25;
-      tGroup.userData.baseAngle = angle;
-      tGroup.userData.phase = i * 1.1;
-
-      // 6 segments per tentacle, tapering, 3x larger
-      let prevSeg = tGroup;
-      const segments = [];
-      for (let s = 0; s < 6; s++) {
-        const segGroup = new THREE.Group();
-        segGroup.position.y = s === 0 ? 0 : -0.18; // 3x spacing
-        const radius = 0.1 - s * 0.012; // 3x radius
-        const seg = new THREE.Mesh(
-          new THREE.SphereGeometry(radius, 6, 4),
-          new THREE.MeshStandardMaterial({
-            color: s < 2 ? 0xCE93D8 : 0xBA68C8,
-            flatShading: true
-          })
-        );
-        segGroup.add(seg);
-        // Suction cups on last 4 segments
-        if (s >= 2) {
-          const cup = new THREE.Mesh(
-            new THREE.TorusGeometry(radius * 0.5, radius * 0.2, 4, 8),
-            new THREE.MeshStandardMaterial({ color: 0xE1BEE7, flatShading: true })
-          );
-          cup.position.z = -radius * 0.4;
-          cup.rotation.x = Math.PI / 2;
-          segGroup.add(cup);
-        }
-        prevSeg.add(segGroup);
-        segments.push(segGroup);
-        prevSeg = segGroup;
-      }
-      this.tentacles.push(segments);
-      this.tentacleGroups.push(tGroup);
-      this.group.add(tGroup);
-    }
-
-    // Octopus: Big round circles — deep purple frame, bioluminescent purple sheen
-    this.buildShades({
-      y: 0.05, z: 0.64, width: 0.68, lensHeight: 0.22,
-      lensShape: 'round', frameColor: 0x4A148C, lensColor: 0x0a001a,
-      sheenColor: 0xCE93D8, armStyle: 'curved'
-    });
-    return this.group;
-  }
-
-  _animateTentacles(time, intensity) {
-    this.tentacles.forEach((segments, i) => {
-      const phase = this.tentacleGroups[i].userData.phase;
-      segments.forEach((seg, s) => {
-        // Gentle flowing wave — constant slow frequency, amplitude grows toward tip
-        const t = s / 5; // 0..1 normalized segment position
-        const baseAmp = 0.04 + t * 0.06; // small at base, larger at tip
-        const speakBoost = 1 + intensity * 0.3; // subtle increase when speaking, never wild
-        const wave = Math.sin(time * 0.8 + phase + s * 0.7) * baseAmp * speakBoost;
-        const sway = Math.cos(time * 0.5 + phase * 1.4 + s * 0.5) * baseAmp * 0.6 * speakBoost;
-        seg.rotation.x = wave;
-        seg.rotation.z = sway;
-      });
-    });
-  }
-
-  updateIdle(time, delta) {
-    super.updateIdle(time, delta);
-    this._animateTentacles(time, 0);
-  }
-
-  updateSpeaking(time, delta, amplitude) {
-    super.updateSpeaking(time, delta, amplitude);
-    // Clamp amplitude so tentacles never go wild
-    this._animateTentacles(time, Math.min(amplitude, 0.6));
-  }
-}
-
-// =====================================================================
-// 6. OWL — Hootspa
+// 5. OWL — Hootspa
 // =====================================================================
 class OwlCharacter extends CharacterBase {
   build() {
@@ -2834,7 +2714,6 @@ const CHARACTER_REGISTRY = {
   robot: RobotCharacter,
   skull: SkullCharacter,
   fox: FoxCharacter,
-  octopus: OctopusCharacter,
   owl: OwlCharacter,
   cat: CatCharacter,
   wizard: WizardCharacter
@@ -2851,7 +2730,6 @@ const CHARACTER_VOICES = {
   robot:   { voiceId: 'onwK4e9ZLuTAKqWW03F9', name: 'Daniel' },    // Steady broadcaster — British, authoritative
   skull:   { voiceId: 'nPczCjzI2devNBz1zQrb', name: 'Brian' },     // Deep, resonant, comforting — dark gravitas
   fox:     { voiceId: 'VURZ3kCSkbLjDYld5lne', name: 'Celeste' },   // Deep, sultry, husky — femme fatale energy
-  octopus: { voiceId: 'pqHfZKP75CvOlQylNhV4', name: 'Bill' },      // Wise, mature, balanced — deep thoughtful
   owl:     { voiceId: 'CwhRBWXzGAHq8TQ4Fs17', name: 'Roger' },     // Laid-back, casual, resonant — professorial
   cat:     { voiceId: 'cgSgspJ2msm6clMCkdW9', name: 'Jessica' },   // Playful, bright, warm — sassy attitude
   wizard:  { voiceId: 'cjVigY5qzO86Huf0OWal', name: 'Eric' }       // Smooth, trustworthy — dramatic gravitas
@@ -3352,21 +3230,18 @@ class FinancialTicker {
     this.texture.wrapS = THREE.RepeatWrapping;
     this.texture.minFilter = THREE.LinearFilter;
 
-    // Create ticker stripe — tall enough to survive CRT scanlines + vignette
+    // Create ticker stripe — behind character (z=-0.4), in front of hero photo (z=-0.6)
     const geo = new THREE.PlaneGeometry(6, 0.25);
     const mat = new THREE.MeshBasicMaterial({
       map: this.texture,
       transparent: true,
       opacity: 0.92,
       side: THREE.DoubleSide,
-      depthWrite: false,
-      depthTest: false
+      depthWrite: false
     });
     this.mesh = new THREE.Mesh(geo, mat);
-    // Position: behind the anchor, angled across frame like a CNBC lower-third
-    this.mesh.position.set(0.3, -0.1, -0.2);
-    this.mesh.rotation.z = Math.PI * 0.08; // ~15 degrees — subtler angle
-    this.mesh.renderOrder = 10;
+    this.mesh.position.set(0.3, -0.1, -0.4);
+    this.mesh.rotation.z = Math.PI * 0.08; // ~15 degrees
     this.scene.add(this.mesh);
 
     // Render placeholder immediately so mesh is visible
@@ -4759,7 +4634,6 @@ class MaxHeadlineApp {
       robot:   ['CHROM-E booting up...', 'Calibrating voice circuits...', 'Running diagnostics...'],
       skull:   ['Mortimer rising from grave...', 'Reassembling jaw bone...', 'Dusting off the crypt...'],
       fox:     ['Voxel stretching...', 'Sharpening those instincts...', 'Adjusting the fur...'],
-      octopus: ['Inkwell surfacing...', 'Untangling tentacles...', 'Squirting some ink...'],
       owl:     ['Hootspa waking up...', 'Rotating head 270 degrees...', 'Getting reading glasses...'],
       cat:     ['Whiskers napping... one sec...', 'Knocking things off desk...', 'Stretching... slowly...'],
       wizard:  ['Glitch consulting the orb...', 'Gathering arcane notes...', 'Enchanting the mic...']
@@ -4904,7 +4778,6 @@ class MaxHeadlineApp {
       robot:   { bg: '#37474F', border: '#78909C', glow: 'rgba(120,144,156,0.5)' },
       skull:   { bg: '#263238', border: '#607D8B', glow: 'rgba(96,125,139,0.5)' },
       fox:     { bg: '#BF360C', border: '#FF6E40', glow: 'rgba(255,110,64,0.5)' },
-      octopus: { bg: '#6A1B9A', border: '#CE93D8', glow: 'rgba(171,71,188,0.5)' },
       owl:     { bg: '#3E2723', border: '#A1887F', glow: 'rgba(141,110,99,0.5)' },
       cat:     { bg: '#E65100', border: '#FFB74D', glow: 'rgba(255,183,77,0.5)' },
       wizard:  { bg: '#311B92', border: '#B388FF', glow: 'rgba(124,77,255,0.5)' }
