@@ -4308,51 +4308,83 @@ class MaxHeadlineApp {
     }
   }
 
-  // ========== MEME SHAPES — 4 to 8 sided polygonal prisms with meme textures ==========
+  // ========== MEME SHAPES — 3D polyhedra with meme textures on every face ==========
   async _loadMemeShapes() {
     try {
       const res = await fetch('/api/memes');
       const files = await res.json();
       if (!files.length) return;
 
-      // Use a separate shuffle from meme cubes — pick from the back of the list
       const shuffled = files.sort(() => Math.random() - 0.5);
-      const SHAPE_COUNT = Math.min(10, Math.floor(shuffled.length / 3));
-      if (SHAPE_COUNT === 0) return;
-
       const loader = new THREE.TextureLoader();
 
-      // Geometry generators for 4-8 sided prisms/polygons
-      const makePolygonGeo = (sides, radius, depth) => {
-        return new THREE.CylinderGeometry(radius, radius, depth, sides, 1);
-      };
+      // Helper: convert polyhedron geometry to per-face material groups with proper UVs
+      function preparePolyGeo(geo, faceCount) {
+        const g = geo.index ? geo.toNonIndexed() : geo.clone();
+        const posCount = g.attributes.position.count;
+        const vertsPerFace = posCount / faceCount;
+        g.clearGroups();
+        const uvs = new Float32Array(posCount * 2);
+        for (let f = 0; f < faceCount; f++) {
+          g.addGroup(f * vertsPerFace, vertsPerFace, f);
+          const base = f * vertsPerFace;
+          if (vertsPerFace === 3) {
+            // Triangle face — map to largest inscribed area of texture
+            uvs[(base + 0) * 2] = 0.0; uvs[(base + 0) * 2 + 1] = 0.0;
+            uvs[(base + 1) * 2] = 1.0; uvs[(base + 1) * 2 + 1] = 0.0;
+            uvs[(base + 2) * 2] = 0.5; uvs[(base + 2) * 2 + 1] = 1.0;
+          }
+        }
+        g.setAttribute('uv', new THREE.BufferAttribute(uvs, 2));
+        return g;
+      }
+
+      // Shape types: tetrahedron (4), box variants (6), octahedron (8)
+      const shapeConfigs = [
+        { type: 'tetra', faces: 4, geo: () => preparePolyGeo(new THREE.TetrahedronGeometry(0.5, 0), 4) },
+        { type: 'box-tall', faces: 6, geo: () => new THREE.BoxGeometry(0.4, 0.7, 0.35) },
+        { type: 'octa', faces: 8, geo: () => preparePolyGeo(new THREE.OctahedronGeometry(0.45, 0), 8) },
+        { type: 'box-flat', faces: 6, geo: () => new THREE.BoxGeometry(0.7, 0.35, 0.5) },
+        { type: 'tetra-big', faces: 4, geo: () => preparePolyGeo(new THREE.TetrahedronGeometry(0.6, 0), 4) },
+        { type: 'octa-small', faces: 8, geo: () => preparePolyGeo(new THREE.OctahedronGeometry(0.35, 0), 8) },
+        { type: 'box-wide', faces: 6, geo: () => new THREE.BoxGeometry(0.6, 0.4, 0.6) },
+        { type: 'tetra', faces: 4, geo: () => preparePolyGeo(new THREE.TetrahedronGeometry(0.45, 0), 4) },
+        { type: 'octa', faces: 8, geo: () => preparePolyGeo(new THREE.OctahedronGeometry(0.5, 0), 8) },
+        { type: 'box-cube', faces: 6, geo: () => new THREE.BoxGeometry(0.45, 0.45, 0.45) },
+      ];
+
+      // Need enough images: sum of all faces across shapes
+      let totalFaces = 0;
+      shapeConfigs.forEach(s => totalFaces += s.faces);
+      if (shuffled.length < totalFaces + 72) return; // 72 reserved for meme cubes (12 * 6)
+
+      let imgIdx = 72; // start after meme cube images
+      const SHAPE_COUNT = Math.min(shapeConfigs.length, Math.floor((shuffled.length - 72) / 8));
+      if (SHAPE_COUNT === 0) return;
 
       for (let i = 0; i < SHAPE_COUNT; i++) {
-        const sides = 4 + (i % 5); // cycles through 4, 5, 6, 7, 8 sides
-        const radius = 0.3 + Math.random() * 0.5;
-        const depth = 0.08 + Math.random() * 0.15;
-        const geo = makePolygonGeo(sides, radius, depth);
+        const config = shapeConfigs[i % shapeConfigs.length];
+        const geo = config.geo();
+        const faceCount = config.faces;
 
-        // Load one meme texture for each shape
-        const imgFile = shuffled[(SHAPE_COUNT * 6) + i] || shuffled[i % shuffled.length];
-        const tex = loader.load(`/memes/${encodeURIComponent(imgFile)}`);
-        tex.minFilter = THREE.LinearMipmapLinearFilter;
-        tex.magFilter = THREE.LinearFilter;
-        tex.colorSpace = THREE.SRGBColorSpace;
+        // Load one meme texture per face
+        const opacity = 0.3 + Math.random() * 0.6;
+        const materials = [];
+        for (let f = 0; f < faceCount; f++) {
+          const imgFile = shuffled[imgIdx % shuffled.length];
+          imgIdx++;
+          const tex = loader.load(`/memes/${encodeURIComponent(imgFile)}`);
+          tex.minFilter = THREE.LinearMipmapLinearFilter;
+          tex.magFilter = THREE.LinearFilter;
+          tex.colorSpace = THREE.SRGBColorSpace;
+          materials.push(new THREE.MeshStandardMaterial({
+            map: tex, transparent: true, opacity,
+            roughness: 0.4, metalness: 0.1,
+            emissive: 0x222222, emissiveIntensity: 0.3
+          }));
+        }
 
-        const opacity = 0.25 + Math.random() * 0.65;
-        // CylinderGeometry has 3 material groups: side, top cap, bottom cap
-        const sideMat = new THREE.MeshStandardMaterial({
-          color: 0x333333, transparent: true, opacity: opacity * 0.5,
-          roughness: 0.3, metalness: 0.6, emissive: 0x111111, emissiveIntensity: 0.2
-        });
-        const capMat = new THREE.MeshStandardMaterial({
-          map: tex, transparent: true, opacity,
-          roughness: 0.4, metalness: 0.1,
-          emissive: 0x222222, emissiveIntensity: 0.3
-        });
-
-        const mesh = new THREE.Mesh(geo, [sideMat, capMat, capMat]);
+        const mesh = new THREE.Mesh(geo, materials);
 
         // Position scattered around the scene
         const isFar = i >= SHAPE_COUNT / 2;
@@ -4372,11 +4404,14 @@ class MaxHeadlineApp {
           mesh.scale.setScalar(0.5 + Math.random() * 0.6);
         }
 
-        // Tilt so the meme faces camera (rotate to show flat face)
-        mesh.rotation.x = Math.PI / 2 + (Math.random() - 0.5) * 0.4;
-        mesh.rotation.y = Math.random() * Math.PI * 2;
+        // Random initial orientation
+        mesh.rotation.set(
+          Math.random() * Math.PI * 2,
+          Math.random() * Math.PI * 2,
+          Math.random() * Math.PI * 2
+        );
 
-        // Slow tumble
+        // Slow 3D tumble on all axes
         mesh.userData.memeShape = true;
         mesh.userData.rotX = (0.005 + Math.random() * 0.02) * (Math.random() < 0.5 ? 1 : -1);
         mesh.userData.rotY = (0.01 + Math.random() * 0.03) * (Math.random() < 0.5 ? 1 : -1);
@@ -4389,7 +4424,7 @@ class MaxHeadlineApp {
 
         this.scene.add(mesh);
         this.memeShapes.push(mesh);
-        this.floatingProps.push(mesh); // so mode color changes affect them
+        this.floatingProps.push(mesh);
       }
     } catch (e) {
       console.warn('Meme shapes failed to load:', e);
