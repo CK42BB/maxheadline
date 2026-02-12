@@ -4348,6 +4348,10 @@ class MaxHeadlineApp {
       this.scene.add(mesh);
     }
 
+    // === MEME CUBES — loaded async, added to scene when ready ===
+    this.memeCubes = [];
+    this._loadMemeCubes();
+
     // === PARTICLE SYSTEM — floating sparkle field ===
     const particleCount = 300;
     const particleGeo = new THREE.BufferGeometry();
@@ -4411,6 +4415,155 @@ class MaxHeadlineApp {
       );
       orb.position.set(x, 4, -1);
       this.scene.add(orb);
+    });
+  }
+
+  // ========== MEME CUBES ==========
+  async _loadMemeCubes() {
+    try {
+      const res = await fetch('/api/memes');
+      const files = await res.json();
+      if (!files.length) return;
+
+      // Shuffle and pick enough for our cubes (6 faces each)
+      const shuffled = files.sort(() => Math.random() - 0.5);
+      const CUBE_COUNT = Math.min(12, Math.floor(shuffled.length / 6));
+      if (CUBE_COUNT === 0) return;
+
+      const loader = new THREE.TextureLoader();
+
+      // Movement pattern generators
+      const patterns = [
+        // 0: Wide orbit
+        (i) => ({ type: 'orbit', radius: 6 + Math.random() * 8, speed: 0.04 + Math.random() * 0.06,
+          phase: Math.random() * Math.PI * 2, yBase: (Math.random() - 0.5) * 4,
+          yAmp: 0.5 + Math.random() * 1.5, ySpeed: 0.1 + Math.random() * 0.2,
+          zOffset: -3 - Math.random() * 8 }),
+        // 1: Spiral
+        (i) => ({ type: 'spiral', radius: 4 + Math.random() * 5, speed: 0.03 + Math.random() * 0.05,
+          phase: Math.random() * Math.PI * 2, ySpeed: 0.08 + Math.random() * 0.15,
+          yAmp: 3 + Math.random() * 3, zOffset: -2 - Math.random() * 6 }),
+        // 2: Figure-8 / lemniscate
+        (i) => ({ type: 'figure8', radius: 5 + Math.random() * 6, speed: 0.03 + Math.random() * 0.04,
+          phase: Math.random() * Math.PI * 2, yBase: (Math.random() - 0.5) * 3,
+          yAmp: 1 + Math.random() * 2, zOffset: -4 - Math.random() * 6 }),
+        // 3: Gentle drift (straight-ish with sine wobble)
+        (i) => ({ type: 'drift', xSpeed: (Math.random() - 0.5) * 0.3, yBase: (Math.random() - 0.5) * 4,
+          yAmp: 0.3 + Math.random() * 0.8, ySpeed: 0.15 + Math.random() * 0.3,
+          zBase: -2 - Math.random() * 10, xBase: (Math.random() - 0.5) * 14,
+          wobbleAmp: 0.5 + Math.random() * 1.5, wobbleSpeed: 0.1 + Math.random() * 0.2 }),
+        // 4: Pendulum arc
+        (i) => ({ type: 'pendulum', radius: 5 + Math.random() * 5, speed: 0.05 + Math.random() * 0.06,
+          arcAngle: 0.6 + Math.random() * 1.2, phase: Math.random() * Math.PI * 2,
+          yBase: -1 + Math.random() * 3, zOffset: -3 - Math.random() * 7 }),
+      ];
+
+      for (let c = 0; c < CUBE_COUNT; c++) {
+        const faceTextures = [];
+        for (let f = 0; f < 6; f++) {
+          const imgFile = shuffled[c * 6 + f];
+          const tex = loader.load(`/memes/${encodeURIComponent(imgFile)}`);
+          tex.minFilter = THREE.LinearMipmapLinearFilter;
+          tex.magFilter = THREE.LinearFilter;
+          tex.colorSpace = THREE.SRGBColorSpace;
+          faceTextures.push(tex);
+        }
+
+        // 6 materials, one per face
+        const opacity = 0.2 + Math.random() * 0.8;
+        const materials = faceTextures.map(tex =>
+          new THREE.MeshStandardMaterial({
+            map: tex, transparent: true, opacity,
+            roughness: 0.4, metalness: 0.1,
+            emissive: 0x222222, emissiveIntensity: 0.3
+          })
+        );
+
+        // Size in 3D units — maps roughly to 100-400px on screen depending on depth
+        // Near cubes: smaller 3D size (appear ~100-250px), Far cubes: larger (appear ~200-400px)
+        const isForeground = c < CUBE_COUNT / 3;
+        const size = isForeground
+          ? 0.3 + Math.random() * 0.4   // foreground: smaller geometry, closer = bigger on screen
+          : 0.5 + Math.random() * 0.8;  // background: larger geometry
+
+        const geo = new THREE.BoxGeometry(size, size, size);
+        const cube = new THREE.Mesh(geo, materials);
+
+        // Rotation speeds (always spinning on multiple axes)
+        const rotX = (0.05 + Math.random() * 0.25) * (Math.random() < 0.5 ? 1 : -1);
+        const rotY = (0.08 + Math.random() * 0.3) * (Math.random() < 0.5 ? 1 : -1);
+        const rotZ = (0.02 + Math.random() * 0.1) * (Math.random() < 0.5 ? 1 : -1);
+
+        // Pick a movement pattern
+        const patternFn = patterns[c % patterns.length];
+        const motion = patternFn(c);
+
+        cube.userData.memeCube = true;
+        cube.userData.rotX = rotX;
+        cube.userData.rotY = rotY;
+        cube.userData.rotZ = rotZ;
+        cube.userData.motion = motion;
+        cube.userData.baseOpacity = opacity;
+        cube.userData.isForeground = isForeground;
+
+        // Initial position (will be overridden by motion update)
+        cube.position.set(0, 0, motion.zOffset || motion.zBase || -5);
+
+        this.scene.add(cube);
+        this.memeCubes.push(cube);
+      }
+    } catch (e) {
+      console.warn('Meme cubes failed to load:', e);
+    }
+  }
+
+  _updateMemeCubes(elapsed, delta) {
+    this.memeCubes.forEach(cube => {
+      const m = cube.userData.motion;
+      const t = elapsed;
+
+      // Position based on motion type
+      switch (m.type) {
+        case 'orbit': {
+          cube.position.x = Math.cos(t * m.speed + m.phase) * m.radius;
+          cube.position.z = m.zOffset + Math.sin(t * m.speed + m.phase) * m.radius * 0.4;
+          cube.position.y = m.yBase + Math.sin(t * m.ySpeed) * m.yAmp;
+          break;
+        }
+        case 'spiral': {
+          const angle = t * m.speed + m.phase;
+          const r = m.radius * (0.6 + 0.4 * Math.sin(t * 0.05));
+          cube.position.x = Math.cos(angle) * r;
+          cube.position.z = m.zOffset + Math.sin(angle) * r * 0.5;
+          cube.position.y = Math.sin(t * m.ySpeed) * m.yAmp;
+          break;
+        }
+        case 'figure8': {
+          const a = t * m.speed + m.phase;
+          cube.position.x = Math.sin(a) * m.radius;
+          cube.position.z = m.zOffset + Math.sin(a * 2) * m.radius * 0.3;
+          cube.position.y = m.yBase + Math.sin(t * 0.2) * m.yAmp;
+          break;
+        }
+        case 'drift': {
+          cube.position.x = m.xBase + Math.sin(t * m.wobbleSpeed) * m.wobbleAmp;
+          cube.position.y = m.yBase + Math.sin(t * m.ySpeed) * m.yAmp;
+          cube.position.z = m.zBase + Math.sin(t * 0.03) * 2;
+          break;
+        }
+        case 'pendulum': {
+          const swing = Math.sin(t * m.speed + m.phase) * m.arcAngle;
+          cube.position.x = Math.sin(swing) * m.radius;
+          cube.position.z = m.zOffset + Math.cos(swing) * m.radius * 0.3;
+          cube.position.y = m.yBase + Math.cos(t * 0.15) * 0.5;
+          break;
+        }
+      }
+
+      // Rotation — always spinning
+      cube.rotation.x += cube.userData.rotX * delta;
+      cube.rotation.y += cube.userData.rotY * delta;
+      cube.rotation.z += cube.userData.rotZ * delta;
     });
   }
 
@@ -4896,6 +5049,9 @@ class MaxHeadlineApp {
         this.currentCharacter.triggerGlitch();
       }
     }
+
+    // Meme cubes — complex motion paths
+    if (this.memeCubes.length) this._updateMemeCubes(elapsed, delta);
 
     // Floating props — rotation + float + orbital drift
     this.floatingProps.forEach(mesh => {

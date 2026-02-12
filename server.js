@@ -816,6 +816,22 @@ app.post('/api/refresh', async (req, res) => {
   refreshNews(mode);
 });
 
+// GET /api/memes — list available meme images
+const MEMES_DIR = path.join(__dirname, 'memes');
+app.get('/api/memes', (req, res) => {
+  try {
+    if (!fs.existsSync(MEMES_DIR)) return res.json([]);
+    const files = fs.readdirSync(MEMES_DIR)
+      .filter(f => /\.(jpg|jpeg|png|gif|webp)$/i.test(f));
+    res.json(files);
+  } catch (e) {
+    res.json([]);
+  }
+});
+
+// Serve memes directory
+app.use('/memes', express.static(MEMES_DIR));
+
 // =====================================================================
 // STARTUP
 // =====================================================================
