@@ -3242,6 +3242,7 @@ class FinancialTicker {
     this.mesh = new THREE.Mesh(geo, mat);
     this.mesh.position.set(0.3, -0.1, -0.4);
     this.mesh.rotation.z = Math.PI * 0.08; // ~15 degrees
+    this.mesh.renderOrder = -1; // render BEFORE character so character draws on top
     this.scene.add(this.mesh);
 
     // Render placeholder immediately so mesh is visible
