@@ -3352,21 +3352,21 @@ class FinancialTicker {
     this.texture.wrapS = THREE.RepeatWrapping;
     this.texture.minFilter = THREE.LinearFilter;
 
-    // Create a long thin plane, positioned behind character, rotated diagonally
-    const geo = new THREE.PlaneGeometry(6, 0.18);
+    // Create ticker stripe — tall enough to survive CRT scanlines + vignette
+    const geo = new THREE.PlaneGeometry(6, 0.25);
     const mat = new THREE.MeshBasicMaterial({
       map: this.texture,
       transparent: true,
-      opacity: 0.8,
+      opacity: 0.92,
       side: THREE.DoubleSide,
       depthWrite: false,
       depthTest: false
     });
     this.mesh = new THREE.Mesh(geo, mat);
-    // Position: behind the anchor (z=-0.3), diagonal from bottom-left to top-right
-    this.mesh.position.set(0.5, 0.2, -0.3);
-    this.mesh.rotation.z = Math.PI * 0.12; // ~22 degrees
-    this.mesh.renderOrder = 1;
+    // Position: behind the anchor, angled across frame like a CNBC lower-third
+    this.mesh.position.set(0.3, -0.1, -0.2);
+    this.mesh.rotation.z = Math.PI * 0.08; // ~15 degrees — subtler angle
+    this.mesh.renderOrder = 10;
     this.scene.add(this.mesh);
 
     // Render placeholder immediately so mesh is visible
@@ -3392,19 +3392,20 @@ class FinancialTicker {
     const H = this.canvas.height;
 
     ctx.clearRect(0, 0, W, H);
-    // Solid dark background with enough contrast to be visible against scene
-    ctx.fillStyle = 'rgba(18, 12, 40, 0.95)';
+    // Dark background — opaque enough to read text against scene
+    ctx.fillStyle = '#0c0820';
     ctx.fillRect(0, 0, W, H);
-    // Top/bottom edge highlights
-    ctx.fillStyle = 'rgba(184, 41, 221, 0.4)';
-    ctx.fillRect(0, 0, W, 1);
-    ctx.fillRect(0, H - 1, W, 1);
+    // Bright edge lines — cyan top, pink bottom
+    ctx.fillStyle = '#00f0ff';
+    ctx.fillRect(0, 0, W, 2);
+    ctx.fillStyle = '#ff2d95';
+    ctx.fillRect(0, H - 2, W, 2);
 
     if (this.tickerData.length === 0) {
-      ctx.font = 'bold 24px monospace';
+      ctx.font = 'bold 28px monospace';
       ctx.textBaseline = 'middle';
-      ctx.fillStyle = '#6a6e80';
-      const noData = 'AWAITING DATA \u25C6 MARKET FEED \u25C6 ';
+      ctx.fillStyle = '#8088a0';
+      const noData = 'AWAITING MARKET DATA \u25C6 ';
       const noDataW = ctx.measureText(noData).width;
       for (let x = 0; x < W; x += noDataW) {
         ctx.fillText(noData, x, H / 2);

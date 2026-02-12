@@ -61,6 +61,29 @@ function saveCache(mode, data) {
   fs.writeFileSync(getCacheFile(mode), JSON.stringify(data, null, 2));
 }
 
+const STORY_TTL_MS = 48 * 60 * 60 * 1000; // 48 hours
+
+// Retire stories older than 48h, return surviving ones
+function pruneExpiredStories(stories) {
+  const now = Date.now();
+  return stories.filter(s => {
+    const addedAt = s.addedAt ? new Date(s.addedAt).getTime() : 0;
+    return (now - addedAt) < STORY_TTL_MS;
+  });
+}
+
+// Merge new stories on top of existing, dedup by id
+function mergeStories(existingStories, newStories) {
+  const now = new Date().toISOString();
+  // Tag new stories with addedAt timestamp
+  const tagged = newStories.map(s => ({ ...s, addedAt: s.addedAt || now }));
+  // Dedup: new stories replace any with the same id
+  const existingIds = new Set(tagged.map(s => s.id));
+  const kept = existingStories.filter(s => !existingIds.has(s.id));
+  // New stories on top, then existing (still sorted by recency)
+  return [...tagged, ...kept];
+}
+
 function loadStats() {
   if (!fs.existsSync(STATS_FILE)) return { characters: {}, totalPlays: 0 };
   try { return JSON.parse(fs.readFileSync(STATS_FILE, 'utf8')); } catch { return { characters: {}, totalPlays: 0 }; }
@@ -500,13 +523,20 @@ async function refreshNews(mode = 'everything') {
   try {
     console.log(`\n=== Refreshing ${mode} news at ${new Date().toLocaleString('en-US', { timeZone: 'America/New_York' })} ET ===`);
 
-    // Fetch stories from Anthropic (with retry)
-    let stories;
+    // Load existing stories and prune expired (>48h)
+    const existing = loadCache(mode);
+    const survivingStories = existing ? pruneExpiredStories(existing.stories || []) : [];
+    const prunedCount = (existing?.stories?.length || 0) - survivingStories.length;
+    if (prunedCount > 0) console.log(`Pruned ${prunedCount} expired stories (>48h)`);
+    console.log(`${survivingStories.length} existing stories still active`);
+
+    // Fetch NEW stories from Anthropic (with retry)
+    let newStories;
     for (let attempt = 1; attempt <= 2; attempt++) {
       try {
-        console.log(`Fetching stories from Anthropic (attempt ${attempt})...`);
-        stories = await fetchNewsFromAPI(mode, CHARACTER_NAMES.frog);
-        console.log(`Got ${stories.length} stories`);
+        console.log(`Fetching new stories from Anthropic (attempt ${attempt})...`);
+        newStories = await fetchNewsFromAPI(mode, CHARACTER_NAMES.frog);
+        console.log(`Got ${newStories.length} new stories`);
         break;
       } catch (fetchErr) {
         console.error(`Fetch attempt ${attempt} failed:`, fetchErr.message);
@@ -518,21 +548,26 @@ async function refreshNews(mode = 'everything') {
 
     // Resolve real images via og:image scraping
     console.log('Resolving story images...');
-    const withImages = await resolveStoryImages(stories);
+    const withImages = await resolveStoryImages(newStories);
     const imgCount = withImages.filter(s => s.imageUrl).length;
     console.log(`Resolved ${imgCount}/${withImages.length} images`);
 
-    // Save stories to cache
+    // Merge: new stories on top, existing below, deduped
+    const merged = mergeStories(survivingStories, withImages);
+    console.log(`Total stories after merge: ${merged.length} (${withImages.length} new + ${merged.length - withImages.length} retained)`);
+
+    // Save merged stories to cache
     const cacheData = {
       mode,
-      stories: withImages,
+      stories: merged,
       fetchedAt: new Date().toISOString(),
-      fetchedAtET: new Date().toLocaleString('en-US', { timeZone: 'America/New_York' })
+      fetchedAtET: new Date().toLocaleString('en-US', { timeZone: 'America/New_York' }),
+      lastRefreshET: new Date().toLocaleString('en-US', { timeZone: 'America/New_York' })
     };
     saveCache(mode, cacheData);
     console.log(`Cached ${mode} stories`);
 
-    // Generate TTS audio (default voice — frog/Ribbitz)
+    // Generate TTS audio for new stories only (default voice — frog/Ribbitz)
     await generateAllTTS(withImages, 'frog');
 
     const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
@@ -596,26 +631,28 @@ app.get('/api/stories', (req, res) => {
   res.json(cache);
 });
 
-// POST /api/news — legacy endpoint, now triggers refresh if no cache exists
+// POST /api/news — legacy endpoint, serves cache only (refreshes happen on 6am/6pm schedule)
 app.post('/api/news', async (req, res) => {
   const { mode = 'everything' } = req.body;
   const cache = loadCache(mode);
 
-  if (cache) {
+  if (cache && cache.stories && cache.stories.length > 0) {
     return res.json({ stories: cache.stories });
   }
 
-  // No cache — do a live fetch (only happens on first load)
-  try {
-    await refreshNews(mode);
-    const freshCache = loadCache(mode);
-    if (freshCache) {
-      return res.json({ stories: freshCache.stories });
+  // No cache at all — do initial fetch (only happens on very first boot)
+  if (!isRefreshing) {
+    try {
+      await refreshNews(mode);
+      const freshCache = loadCache(mode);
+      if (freshCache) {
+        return res.json({ stories: freshCache.stories });
+      }
+    } catch (err) {
+      console.error('News fetch error:', err);
     }
-    res.status(500).json({ error: 'Failed to fetch and cache news' });
-  } catch (err) {
-    console.error('News fetch error:', err);
-    res.status(500).json({ error: 'Failed to fetch news', detail: err.message });
+  }
+  res.status(503).json({ error: 'Stories not available yet. Next refresh at 6am/6pm ET.' });
   }
 });
 
@@ -1017,13 +1054,39 @@ const PORT = process.env.PORT || 3000;
 app.listen(PORT, async () => {
   console.log(`MaxHeadline running on http://localhost:${PORT}`);
 
+  // Backfill addedAt on old stories that don't have it, then prune expired (>48h)
+  for (const mode of ['everything', 'uponly', 'thisisfine']) {
+    const cache = loadCache(mode);
+    if (cache && cache.stories) {
+      // Backfill addedAt using the cache-level fetchedAt for legacy stories
+      let dirty = false;
+      const fallbackTime = cache.fetchedAt || new Date().toISOString();
+      for (const story of cache.stories) {
+        if (!story.addedAt) {
+          story.addedAt = fallbackTime;
+          dirty = true;
+        }
+      }
+      const before = cache.stories.length;
+      cache.stories = pruneExpiredStories(cache.stories);
+      if (cache.stories.length !== before) {
+        console.log(`[${mode}] Pruned ${before - cache.stories.length} expired stories on startup`);
+        dirty = true;
+      }
+      if (dirty) saveCache(mode, cache);
+    }
+  }
+
   // Check if we have cached stories; if not, do an initial fetch
-  const hasCache = ['everything', 'uponly', 'thisisfine'].some(m => loadCache(m));
+  const hasCache = ['everything', 'uponly', 'thisisfine'].some(m => {
+    const c = loadCache(m);
+    return c && c.stories && c.stories.length > 0;
+  });
   if (!hasCache) {
     console.log('No cached stories found — doing initial fetch...');
     await refreshNews('everything');
   } else {
-    console.log('Cached stories found. Serving from cache.');
+    console.log('Cached stories found. Serving from cache until next 6am/6pm refresh.');
   }
 
   // Schedule 6am/6pm ET refreshes
