@@ -24,25 +24,20 @@ const CHARACTER_VOICES = {
   skull:   { voiceId: 'nPczCjzI2devNBz1zQrb', name: 'Brian' },
   fox:     { voiceId: 'VURZ3kCSkbLjDYld5lne', name: 'Celeste' },
   octopus: { voiceId: 'pqHfZKP75CvOlQylNhV4', name: 'Bill' },
-  alien:   { voiceId: 'SAz9YHcvj6GT2YYXdXww', name: 'River' },
   owl:     { voiceId: 'CwhRBWXzGAHq8TQ4Fs17', name: 'Roger' },
   cat:     { voiceId: 'cgSgspJ2msm6clMCkdW9', name: 'Jessica' },
-  wizard:  { voiceId: 'cjVigY5qzO86Huf0OWal', name: 'Eric' },
-  mask:    { voiceId: 'pNInz6obpgDQGcFmaJgB', name: 'Adam' }
+  wizard:  { voiceId: 'cjVigY5qzO86Huf0OWal', name: 'Eric' }
 };
 
-// Lowkey = smooth newsreader. Highkey = unhinged Max Headroom chaos.
+// Highkey only — unhinged Max Headroom chaos energy
 const VOICE_ENERGY_SETTINGS = {
-  'lowkey-headline':  { stability: 0.15, similarity_boost: 0.65, style: 0.9, speed: 0.95, use_speaker_boost: true },
-  'lowkey-summary':   { stability: 0.5, similarity_boost: 0.75, style: 0.2, speed: 0.95, use_speaker_boost: true },
   'highkey-headline': { stability: 0.1,  similarity_boost: 0.55, style: 1.0, speed: 1.0, use_speaker_boost: true },
   'highkey-summary':  { stability: 0.2, similarity_boost: 0.6, style: 0.8, speed: 1.02, use_speaker_boost: true }
 };
 
 const CHARACTER_NAMES = {
   frog: 'Ribbitz', robot: 'CHROM-E', skull: 'Mortimer', fox: 'Voxel',
-  octopus: 'Inkwell', alien: 'Zyx-9', owl: 'Hootspa', cat: 'Whiskers',
-  wizard: 'Glitch', mask: 'Persona'
+  octopus: 'Inkwell', owl: 'Hootspa', cat: 'Whiskers', wizard: 'Glitch'
 };
 
 // =====================================================================
@@ -439,20 +434,18 @@ async function generateAllTTS(stories, characterId = 'frog') {
   console.log(`Pre-generating TTS for ${stories.length} stories (${voice.name} only)...`);
 
   for (const story of stories) {
-    for (const energy of ['lowkey', 'highkey']) {
-      await generateTTSForStory(
-        characterId, `${story.id}-headline`, story.headline, voice.voiceId,
-        energy, VOICE_ENERGY_SETTINGS[`${energy}-headline`]
-      );
-      await new Promise(r => setTimeout(r, 300));
+    await generateTTSForStory(
+      characterId, `${story.id}-headline`, story.headline, voice.voiceId,
+      'highkey', VOICE_ENERGY_SETTINGS['highkey-headline']
+    );
+    await new Promise(r => setTimeout(r, 300));
 
-      const summaryText = (energy === 'highkey' && story.summaryHighkey) ? story.summaryHighkey : story.summary;
-      await generateTTSForStory(
-        characterId, `${story.id}-summary`, summaryText, voice.voiceId,
-        energy, VOICE_ENERGY_SETTINGS[`${energy}-summary`]
-      );
-      await new Promise(r => setTimeout(r, 300));
-    }
+    const summaryText = story.summaryHighkey || story.summary;
+    await generateTTSForStory(
+      characterId, `${story.id}-summary`, summaryText, voice.voiceId,
+      'highkey', VOICE_ENERGY_SETTINGS['highkey-summary']
+    );
+    await new Promise(r => setTimeout(r, 300));
   }
   console.log('Pre-generation complete.');
 }
@@ -474,20 +467,18 @@ async function generateCharacterTTS(characterId, mode) {
 
   console.log(`On-demand TTS: generating ${characterId} for ${mode}...`);
   for (const story of cache.stories) {
-    for (const energy of ['lowkey', 'highkey']) {
-      await generateTTSForStory(
-        characterId, `${story.id}-headline`, story.headline, voice.voiceId,
-        energy, VOICE_ENERGY_SETTINGS[`${energy}-headline`]
-      );
-      await new Promise(r => setTimeout(r, 200));
+    await generateTTSForStory(
+      characterId, `${story.id}-headline`, story.headline, voice.voiceId,
+      'highkey', VOICE_ENERGY_SETTINGS['highkey-headline']
+    );
+    await new Promise(r => setTimeout(r, 200));
 
-      const summaryText = (energy === 'highkey' && story.summaryHighkey) ? story.summaryHighkey : story.summary;
-      await generateTTSForStory(
-        characterId, `${story.id}-summary`, summaryText, voice.voiceId,
-        energy, VOICE_ENERGY_SETTINGS[`${energy}-summary`]
-      );
-      await new Promise(r => setTimeout(r, 200));
-    }
+    const summaryText = story.summaryHighkey || story.summary;
+    await generateTTSForStory(
+      characterId, `${story.id}-summary`, summaryText, voice.voiceId,
+      'highkey', VOICE_ENERGY_SETTINGS['highkey-summary']
+    );
+    await new Promise(r => setTimeout(r, 200));
   }
   _generatingCharacters.delete(key);
   console.log(`On-demand TTS complete: ${characterId} for ${mode}`);
@@ -631,8 +622,8 @@ app.post('/api/news', async (req, res) => {
 // GET /api/audio/:characterId/:storyId/:energy — serve pre-generated audio
 app.get('/api/audio/:characterId/:storyId/:energy', async (req, res) => {
   const { characterId, storyId, energy } = req.params;
-  if (!['lowkey', 'highkey'].includes(energy)) {
-    return res.status(400).json({ error: 'energy must be lowkey or highkey' });
+  if (energy !== 'highkey') {
+    return res.status(400).json({ error: 'energy must be highkey' });
   }
 
   const filepath = path.join(AUDIO_DIR, `${characterId}-${storyId}-${energy}.mp3`);
@@ -662,9 +653,10 @@ app.get('/api/audio/:characterId/:storyId/:energy', async (req, res) => {
 
   const text = isHeadline
     ? storyData.headline
-    : ((energy === 'highkey' && storyData.summaryHighkey) ? storyData.summaryHighkey : storyData.summary);
-  const settings = VOICE_ENERGY_SETTINGS[`${energy}-${isHeadline ? 'headline' : 'summary'}`];
+    : (storyData.summaryHighkey || storyData.summary);
+  const settings = VOICE_ENERGY_SETTINGS[`highkey-${isHeadline ? 'headline' : 'summary'}`];
 
+  console.log(`[On-demand] Generating ${characterId}/${storyId} with voice ${voice.name} (${voice.voiceId})`);
   const result = await generateTTSForStory(characterId, storyId, text, voice.voiceId, energy, settings);
   if (!result) return res.status(503).json({ error: 'TTS generation failed' });
 
@@ -703,11 +695,9 @@ app.get('/api/character-status/:characterId/:mode', (req, res) => {
 
   let total = 0, generated = 0;
   for (const story of cache.stories) {
-    for (const energy of ['lowkey', 'highkey']) {
-      total += 2; // headline + summary
-      if (fs.existsSync(path.join(AUDIO_DIR, `${characterId}-${story.id}-headline-${energy}.mp3`))) generated++;
-      if (fs.existsSync(path.join(AUDIO_DIR, `${characterId}-${story.id}-summary-${energy}.mp3`))) generated++;
-    }
+    total += 2; // headline + summary
+    if (fs.existsSync(path.join(AUDIO_DIR, `${characterId}-${story.id}-headline-highkey.mp3`))) generated++;
+    if (fs.existsSync(path.join(AUDIO_DIR, `${characterId}-${story.id}-summary-highkey.mp3`))) generated++;
   }
 
   res.json({ ready: generated === total, total, generated, pct: total > 0 ? Math.round(generated / total * 100) : 0 });

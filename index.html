@@ -6,7 +6,7 @@
 <title>MaxHeadline — AI Newsreader</title>
 <meta name="description" content="A glitchy, charismatic AI news anchor with vaporwave energy">
 <meta property="og:title" content="MaxHeadline — AI Newsreader">
-<meta property="og:description" content="Retro-futuristic AI news anchor with 10 characters, 3 modes, and Max Headroom energy">
+<meta property="og:description" content="Retro-futuristic AI news anchor with 8 characters, 3 modes, and Max Headroom energy">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📺</text></svg>">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=VT323&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
@@ -645,10 +645,6 @@ body.ui-hidden #char-name {
         <button id="btn-refresh"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M21 2v6h-6"/><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M3 22v-6h6"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/></svg> REFRESH</button>
         <button id="btn-shades"><svg width="15" height="13" viewBox="0 0 24 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 6c0-1 .5-2 2-2h4c1.5 0 3 .5 3 2v3c0 2-1.5 3-3.5 3S3 11 3 9V6"/><path d="M14 6c0-1 .5-2 2-2h4c1.5 0 3 .5 3 2v3c0 2-1.5 3-3.5 3S16 11 16 9V6"/><path d="M10 7c1-.8 3-.8 4 0"/></svg> SHADES</button>
         <button id="btn-search" title="Search this story">?</button>
-        <div id="energy-selector" style="display:inline-flex; flex-direction:column; gap:1px; vertical-align:middle;">
-          <button id="btn-energy-high" class="energy-opt active" data-energy="highkey" style="font-size:10px; padding:1px 6px; height:15px; box-sizing:border-box;"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg> HIGHKEY</button>
-          <button id="btn-energy-low" class="energy-opt" data-energy="lowkey" style="font-size:10px; padding:1px 6px; height:15px; box-sizing:border-box;"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polygon points="11,5 6,9 2,9 2,15 6,15 11,19"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M19 5a9 9 0 0 1 0 14"/></svg> LOWKEY</button>
-        </div>
       </div>
     </div>
   </div>
@@ -716,11 +712,9 @@ const CHARACTER_META = {
   skull:   { emoji: '\u{1F480}', name: 'Mortimer', color: 0xECEFF1 },
   fox:     { emoji: '\u{1F98A}', name: 'Voxel',    color: 0xFF6D00 },
   octopus: { emoji: '\u{1F419}', name: 'Inkwell',  color: 0xAB47BC },
-  alien:   { emoji: '\u{1F47D}', name: 'Zyx-9',    color: 0x76FF03 },
   owl:     { emoji: '\u{1F989}', name: 'Hootspa',  color: 0x8D6E63 },
   cat:     { emoji: '\u{1F431}', name: 'Whiskers', color: 0xFFB74D },
-  wizard:  { emoji: '\u{1F9D9}', name: 'Glitch',   color: 0x7C4DFF },
-  mask:    { emoji: '\u{1F3AD}', name: 'Persona',  color: 0xFFD54F }
+  wizard:  { emoji: '\u{1F9D9}', name: 'Glitch',   color: 0x7C4DFF }
 };
 
 // =====================================================================
@@ -2343,85 +2337,7 @@ class OctopusCharacter extends CharacterBase {
 }
 
 // =====================================================================
-// 6. ALIEN — Zyx-9
-// =====================================================================
-class AlienCharacter extends CharacterBase {
-  build() {
-    const headGeo = new THREE.SphereGeometry(0.5, 8, 6);
-    headGeo.scale(0.8, 1.2, 0.9);
-    this.head = new THREE.Mesh(headGeo, new THREE.MeshStandardMaterial({ color: 0xB0BEC5, flatShading: true }));
-    this.group.add(this.head);
-
-    // Wrap-around eyes — sized to fit behind shades
-    const eyeGeo = new THREE.SphereGeometry(0.14, 8, 6);
-    const eyeMat = new THREE.MeshStandardMaterial({ color: 0x111111, metalness: 0.8, roughness: 0.2 });
-    [-0.18, 0.18].forEach(x => {
-      const eye = new THREE.Mesh(eyeGeo, eyeMat);
-      eye.position.set(x, 0.1, 0.32);
-      eye.scale.set(1, 0.8, 0.6);
-      this.eyes.push(eye);
-      this.group.add(eye);
-    });
-
-    // Tiny slit mouth
-    const mouthGeo = new THREE.BoxGeometry(0.15, 0.02, 0.05);
-    this.mouth = new THREE.Mesh(mouthGeo, new THREE.MeshStandardMaterial({ color: 0x455A64, flatShading: true }));
-    this.mouth.position.set(0, -0.2, 0.4);
-    this.group.add(this.mouth);
-
-    // Antennae
-    this.antennaTips = [];
-    [-0.15, 0.15].forEach(x => {
-      const rod = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.015, 0.015, 0.4, 4),
-        new THREE.MeshStandardMaterial({ color: 0xB0BEC5 })
-      );
-      rod.position.set(x, 0.7, 0);
-      rod.rotation.z = x > 0 ? -0.15 : 0.15;
-      this.group.add(rod);
-
-      const tip = new THREE.Mesh(
-        new THREE.SphereGeometry(0.04, 4, 4),
-        new THREE.MeshStandardMaterial({ color: 0x76FF03, emissive: 0x76FF03, emissiveIntensity: 1.5 })
-      );
-      tip.position.set(x + (x > 0 ? -0.06 : 0.06), 0.92, 0);
-      this.antennaTips.push(tip);
-      this.features.push(tip);
-      this.group.add(tip);
-    });
-
-    // Slim shoulders
-    this.buildShoulders(0x90A4AE);
-    this.shoulders.scale.set(0.7, 0.8, 0.7);
-    // Alien: Classic aviators — flat plane facing viewer
-    this.buildShades({
-      y: 0.1, z: 0.46, width: 0.55, lensHeight: 0.24,
-      lensShape: 'round', frameColor: 0xC0C0C0, lensColor: 0x001a0a,
-      sheenColor: 0x76FF03, accentColor: 0x76FF03
-    });
-    return this.group;
-  }
-
-  setEmotion(emotion) {
-    super.setEmotion(emotion);
-    const em = EMOTION_MAP[emotion] || EMOTION_MAP.deadpan;
-    const c = new THREE.Color(em.color);
-    this.antennaTips.forEach(t => {
-      t.material.color.copy(c);
-      t.material.emissive.copy(c);
-    });
-  }
-
-  updateSpeaking(time, delta, amplitude) {
-    super.updateSpeaking(time, delta, amplitude);
-    this.antennaTips.forEach((t, i) => {
-      t.material.emissiveIntensity = 1 + Math.sin(time * 10 + i * 3) * amplitude;
-    });
-  }
-}
-
-// =====================================================================
-// 7. OWL — Hootspa
+// 6. OWL — Hootspa
 // =====================================================================
 class OwlCharacter extends CharacterBase {
   build() {
@@ -2877,167 +2793,6 @@ class WizardCharacter extends CharacterBase {
 }
 
 // =====================================================================
-// 10. MASK — Persona
-// =====================================================================
-class MaskCharacter extends CharacterBase {
-  build() {
-    // Comedy half (right)
-    this.comedyFace = new THREE.Group();
-    const comedyHalf = new THREE.Mesh(
-      new THREE.SphereGeometry(0.5, 8, 6, 0, Math.PI),
-      new THREE.MeshStandardMaterial({ color: 0xFFF8E1, flatShading: true })
-    );
-    this.comedyFace.add(comedyHalf);
-
-    // Comedy eye (wide, happy)
-    const cEye = new THREE.Group();
-    cEye.add(new THREE.Mesh(
-      new THREE.SphereGeometry(0.1, 6, 4),
-      new THREE.MeshStandardMaterial({ color: 0xffffff, flatShading: true })
-    ));
-    const cPupil = new THREE.Mesh(
-      new THREE.SphereGeometry(0.05, 6, 4),
-      new THREE.MeshStandardMaterial({ color: 0x111111 })
-    );
-    cPupil.position.z = 0.06;
-    cEye.add(cPupil);
-    cEye.position.set(0.15, 0.1, 0.38);
-    this.comedyFace.add(cEye);
-
-    // Comedy mouth (upturned)
-    const cMouth = new THREE.Mesh(
-      new THREE.TorusGeometry(0.1, 0.02, 4, 8, Math.PI),
-      new THREE.MeshStandardMaterial({ color: 0xF44336, flatShading: true })
-    );
-    cMouth.position.set(0.08, -0.15, 0.42);
-    cMouth.rotation.z = Math.PI;
-    this.comedyFace.add(cMouth);
-
-    // Comedy eyebrow (raised)
-    const cBrow = new THREE.Mesh(
-      new THREE.BoxGeometry(0.12, 0.02, 0.02),
-      new THREE.MeshStandardMaterial({ color: 0x5D4037 })
-    );
-    cBrow.position.set(0.15, 0.22, 0.42);
-    cBrow.rotation.z = -0.2;
-    this.comedyFace.add(cBrow);
-
-    // Tragedy half (left)
-    this.tragedyFace = new THREE.Group();
-    const tragedyHalf = new THREE.Mesh(
-      new THREE.SphereGeometry(0.5, 8, 6, Math.PI, Math.PI),
-      new THREE.MeshStandardMaterial({ color: 0xF5F5F5, flatShading: true })
-    );
-    this.tragedyFace.add(tragedyHalf);
-
-    // Tragedy eye (narrow, sad)
-    const tEye = new THREE.Group();
-    const tIris = new THREE.Mesh(
-      new THREE.SphereGeometry(0.08, 6, 4),
-      new THREE.MeshStandardMaterial({ color: 0xffffff, flatShading: true })
-    );
-    tIris.scale.y = 0.6;
-    tEye.add(tIris);
-    const tPupil = new THREE.Mesh(
-      new THREE.SphereGeometry(0.04, 6, 4),
-      new THREE.MeshStandardMaterial({ color: 0x111111 })
-    );
-    tPupil.position.z = 0.05;
-    tEye.add(tPupil);
-    tEye.position.set(-0.15, 0.08, 0.38);
-    this.tragedyFace.add(tEye);
-
-    // Tragedy mouth (downturned)
-    const tMouth = new THREE.Mesh(
-      new THREE.TorusGeometry(0.1, 0.02, 4, 8, Math.PI),
-      new THREE.MeshStandardMaterial({ color: 0x42A5F5, flatShading: true })
-    );
-    tMouth.position.set(-0.08, -0.2, 0.48);
-    tMouth.scale.set(1.2, 1.2, 1.2);
-    this.tragedyFace.add(tMouth);
-
-    // Tragedy eyebrow (furrowed)
-    const tBrow = new THREE.Mesh(
-      new THREE.BoxGeometry(0.12, 0.02, 0.02),
-      new THREE.MeshStandardMaterial({ color: 0x5D4037 })
-    );
-    tBrow.position.set(-0.15, 0.2, 0.42);
-    tBrow.rotation.z = 0.3;
-    this.tragedyFace.add(tBrow);
-
-    this.group.add(this.comedyFace);
-    this.group.add(this.tragedyFace);
-
-    // Gold border ring
-    const ring = new THREE.Mesh(
-      new THREE.TorusGeometry(0.52, 0.03, 6, 24),
-      new THREE.MeshStandardMaterial({ color: 0xFFD54F, metalness: 0.7, roughness: 0.3 })
-    );
-    ring.position.z = 0.05;
-    this.group.add(ring);
-
-    this.eyes = [cEye, tEye];
-    this.mouth = cMouth;
-    this.head = comedyHalf;
-
-    this.buildShoulders(0xFFD54F);
-    this.shoulders.scale.set(0.8, 1, 0.8);
-
-    this._faceState = 'both';
-    // Mask: Split asymmetric lenses — gold frame, comedy/tragedy dual sheen
-    this.buildShades({
-      y: 0.1, z: 0.62, width: 0.68, lensHeight: 0.18,
-      lensShape: 'split', frameColor: 0xFFD54F
-    });
-    return this.group;
-  }
-
-  setEmotion(emotion) {
-    this.emotion = emotion;
-    const positive = ['excited', 'amused', 'hopeful'];
-    const negative = ['alarmed', 'sarcastic', 'outraged', 'deadpan'];
-
-    if (positive.includes(emotion)) {
-      this.group.rotation.y = 0.3; // show comedy
-      this._faceState = 'comedy';
-    } else if (negative.includes(emotion)) {
-      this.group.rotation.y = -0.3; // show tragedy
-      this._faceState = 'tragedy';
-    } else {
-      this.group.rotation.y = 0;
-      this._faceState = 'both';
-    }
-
-    if (emotion === 'bewildered') {
-      this._bewilderedFlip = true;
-    } else {
-      this._bewilderedFlip = false;
-    }
-  }
-
-  updateIdle(time, delta) {
-    if (this._isGlitching) return;
-    const em = EMOTION_MAP[this.emotion] || EMOTION_MAP.deadpan;
-    if (this._bewilderedFlip) {
-      this.group.rotation.y = Math.sin(time * 6) * 0.5;
-    } else if (this._faceState === 'both') {
-      this.group.rotation.y = Math.sin(time * 0.5) * 0.05;
-    }
-    this.group.rotation.z = Math.sin(time * 0.3) * 0.02;
-    this.group.position.y = Math.sin(time * 0.8) * 0.02;
-
-    this.blinkTimer -= delta;
-    if (this.blinkTimer <= 0) {
-      this.triggerBlink();
-      this.blinkTimer = 2.5 + Math.random() * 4;
-    }
-    if (Math.random() < (em.glitchRate || 0.005)) {
-      this.triggerGlitch();
-    }
-  }
-}
-
-// =====================================================================
 // CHARACTER REGISTRY
 // =====================================================================
 const CHARACTER_REGISTRY = {
@@ -3046,11 +2801,9 @@ const CHARACTER_REGISTRY = {
   skull: SkullCharacter,
   fox: FoxCharacter,
   octopus: OctopusCharacter,
-  alien: AlienCharacter,
   owl: OwlCharacter,
   cat: CatCharacter,
-  wizard: WizardCharacter,
-  mask: MaskCharacter
+  wizard: WizardCharacter
 };
 
 // =====================================================================
@@ -3063,41 +2816,25 @@ const CHARACTER_VOICES = {
   frog:    { voiceId: 'IKne3meq5aSn9XLyUdCD', name: 'Charlie' },   // Deep, confident, energetic — Australian punch
   robot:   { voiceId: 'onwK4e9ZLuTAKqWW03F9', name: 'Daniel' },    // Steady broadcaster — British, authoritative
   skull:   { voiceId: 'nPczCjzI2devNBz1zQrb', name: 'Brian' },     // Deep, resonant, comforting — dark gravitas
-  fox:     { voiceId: 'VURZ3kCSkbLjDYld5lne', name: 'Celeste' },    // Deep, sultry, husky — femme fatale, Salma Hayek energy
+  fox:     { voiceId: 'VURZ3kCSkbLjDYld5lne', name: 'Celeste' },   // Deep, sultry, husky — femme fatale energy
   octopus: { voiceId: 'pqHfZKP75CvOlQylNhV4', name: 'Bill' },      // Wise, mature, balanced — deep thoughtful
-  alien:   { voiceId: 'SAz9YHcvj6GT2YYXdXww', name: 'River' },     // Relaxed, neutral, informative — otherworldly calm
   owl:     { voiceId: 'CwhRBWXzGAHq8TQ4Fs17', name: 'Roger' },     // Laid-back, casual, resonant — professorial
   cat:     { voiceId: 'cgSgspJ2msm6clMCkdW9', name: 'Jessica' },   // Playful, bright, warm — sassy attitude
-  wizard:  { voiceId: 'cjVigY5qzO86Huf0OWal', name: 'Eric' },      // Smooth, trustworthy — dramatic gravitas
-  mask:    { voiceId: 'pNInz6obpgDQGcFmaJgB', name: 'Adam' }       // Dominant, firm — theatrical authority
+  wizard:  { voiceId: 'cjVigY5qzO86Huf0OWal', name: 'Eric' }       // Smooth, trustworthy — dramatic gravitas
 };
 
-// Two energy modes: lowkey (smooth anchor) and highkey (frenetic Max Headroom chaos)
-const VOICE_ENERGY_MODES = {
-  lowkey: {
-    excited:    { stability: 0.35, similarity_boost: 0.7, style: 0.5, speed: 1.05, use_speaker_boost: true },
-    sarcastic:  { stability: 0.45, similarity_boost: 0.75, style: 0.4, speed: 0.95, use_speaker_boost: true },
-    alarmed:    { stability: 0.3,  similarity_boost: 0.7, style: 0.55, speed: 1.08, use_speaker_boost: true },
-    amused:     { stability: 0.4,  similarity_boost: 0.7, style: 0.45, speed: 1.0, use_speaker_boost: true },
-    deadpan:    { stability: 0.6,  similarity_boost: 0.75, style: 0.2, speed: 0.92, use_speaker_boost: true },
-    outraged:   { stability: 0.25, similarity_boost: 0.65, style: 0.6, speed: 1.1, use_speaker_boost: true },
-    hopeful:    { stability: 0.4,  similarity_boost: 0.7, style: 0.4, speed: 1.0, use_speaker_boost: true },
-    bewildered: { stability: 0.3,  similarity_boost: 0.7, style: 0.5, speed: 0.95, use_speaker_boost: true }
-  },
-  highkey: {
-    // Excited truth-teller energy — can't wait to tell you what's really going on
-    excited:    { stability: 0.2,  similarity_boost: 0.6, style: 0.85, speed: 1.08, use_speaker_boost: true },
-    sarcastic:  { stability: 0.25, similarity_boost: 0.6, style: 0.8, speed: 1.0, use_speaker_boost: true },
-    alarmed:    { stability: 0.2,  similarity_boost: 0.6, style: 0.85, speed: 1.05, use_speaker_boost: true },
-    amused:     { stability: 0.2,  similarity_boost: 0.6, style: 0.8, speed: 1.05, use_speaker_boost: true },
-    deadpan:    { stability: 0.3,  similarity_boost: 0.65, style: 0.65, speed: 0.95, use_speaker_boost: true },
-    outraged:   { stability: 0.15, similarity_boost: 0.55, style: 0.9, speed: 1.08, use_speaker_boost: true },
-    hopeful:    { stability: 0.2,  similarity_boost: 0.6, style: 0.85, speed: 1.05, use_speaker_boost: true },
-    bewildered: { stability: 0.2,  similarity_boost: 0.6, style: 0.8, speed: 1.0, use_speaker_boost: true }
-  }
+// Highkey voice settings — frenetic Max Headroom energy
+const EMOTION_VOICE_SETTINGS = {
+  excited:    { stability: 0.2,  similarity_boost: 0.6, style: 0.85, speed: 1.08, use_speaker_boost: true },
+  sarcastic:  { stability: 0.25, similarity_boost: 0.6, style: 0.8, speed: 1.0, use_speaker_boost: true },
+  alarmed:    { stability: 0.2,  similarity_boost: 0.6, style: 0.85, speed: 1.05, use_speaker_boost: true },
+  amused:     { stability: 0.2,  similarity_boost: 0.6, style: 0.8, speed: 1.05, use_speaker_boost: true },
+  deadpan:    { stability: 0.3,  similarity_boost: 0.65, style: 0.65, speed: 0.95, use_speaker_boost: true },
+  outraged:   { stability: 0.15, similarity_boost: 0.55, style: 0.9, speed: 1.08, use_speaker_boost: true },
+  hopeful:    { stability: 0.2,  similarity_boost: 0.6, style: 0.85, speed: 1.05, use_speaker_boost: true },
+  bewildered: { stability: 0.2,  similarity_boost: 0.6, style: 0.8, speed: 1.0, use_speaker_boost: true }
 };
-let currentEnergyMode = 'highkey'; // default to high energy
-const EMOTION_VOICE_SETTINGS = VOICE_ENERGY_MODES.highkey;
+const currentEnergyMode = 'highkey';
 
 class SpeechManager {
   constructor(onAmplitude) {
@@ -3187,7 +2924,6 @@ class SpeechManager {
   }
 
   // Fetch + decode audio without playing — returns trimmed AudioBuffer or null
-  // Falls back to frog's pre-generated audio if current character has none
   async fetchAudio(storyId) {
     if (!storyId) return null;
 
@@ -3196,17 +2932,12 @@ class SpeechManager {
       return this._audioCache[storyId];
     }
 
-    const energy = currentEnergyMode;
     try {
       this._ensureAudioContext();
-      // Try current character first
-      let url = `/api/audio/${encodeURIComponent(this.characterId)}/${encodeURIComponent(storyId)}/${energy}`;
-      let response = await fetch(url);
-      // Fallback to frog's audio if not available for this character
-      if (!response.ok && this.characterId !== 'frog') {
-        url = `/api/audio/frog/${encodeURIComponent(storyId)}/${energy}`;
-        response = await fetch(url);
-      }
+      // Request audio for current character — server generates on-demand if needed
+      const url = `/api/audio/${encodeURIComponent(this.characterId)}/${encodeURIComponent(storyId)}/highkey`;
+      console.log(`[Audio] Fetching: ${this.characterId} / ${storyId}`);
+      const response = await fetch(url);
       if (!response.ok) return null;
       const arrayBuffer = await response.arrayBuffer();
       const audioBuffer = await this.audioContext.decodeAudioData(arrayBuffer);
@@ -3227,8 +2958,8 @@ class SpeechManager {
     source.connect(gainNode);
     gainNode.connect(this.analyser);
 
-    // Highkey: smooth, intentional audio emphasis — never jittery
-    if (currentEnergyMode === 'highkey') {
+    // Smooth, intentional audio emphasis — never jittery
+    {
       let glitchTimer;
       const scheduleGlitch = () => {
         const delay = 4000 + Math.random() * 6000; // less frequent — every 4-10s
@@ -3291,18 +3022,15 @@ class SpeechManager {
   }
 
   // Headline voice — more authoritative, slower, dramatic announcement style
-  static HEADLINE_VOICE = {
-    lowkey:  { stability: 0.15, similarity_boost: 0.65, style: 0.9, speed: 0.95, use_speaker_boost: true },
-    highkey: { stability: 0.1,  similarity_boost: 0.55, style: 1.0, speed: 1.0,  use_speaker_boost: true }
-  };
+  static HEADLINE_VOICE = { stability: 0.1, similarity_boost: 0.55, style: 1.0, speed: 1.0, use_speaker_boost: true };
 
   // Fetch TTS audio without playing — returns trimmed AudioBuffer or null
   async fetchTTSBuffer(text, emotion = 'deadpan', isHeadline = false) {
     if (!text || !text.trim()) return null;
     const voice = CHARACTER_VOICES[this.characterId] || CHARACTER_VOICES.frog;
     const settings = isHeadline
-      ? (SpeechManager.HEADLINE_VOICE[currentEnergyMode] || SpeechManager.HEADLINE_VOICE.highkey)
-      : ((VOICE_ENERGY_MODES[currentEnergyMode] || VOICE_ENERGY_MODES.highkey)[emotion] || VOICE_ENERGY_MODES.highkey.deadpan);
+      ? SpeechManager.HEADLINE_VOICE
+      : (EMOTION_VOICE_SETTINGS[emotion] || EMOTION_VOICE_SETTINGS.deadpan);
     try {
       this._ensureAudioContext();
       const response = await fetch('/api/tts', {
@@ -3322,8 +3050,7 @@ class SpeechManager {
   async speak(text, emotion = 'deadpan') {
     if (!text || !text.trim()) return;
     const voice = CHARACTER_VOICES[this.characterId] || CHARACTER_VOICES.frog;
-    const energySettings = VOICE_ENERGY_MODES[currentEnergyMode] || VOICE_ENERGY_MODES.highkey;
-    const settings = energySettings[emotion] || energySettings.deadpan;
+    const settings = EMOTION_VOICE_SETTINGS[emotion] || EMOTION_VOICE_SETTINGS.deadpan;
 
     try {
       this._ensureAudioContext();
@@ -3363,32 +3090,30 @@ class SpeechManager {
         source.connect(gainNode);
         gainNode.connect(this.analyser);
 
-        // Highkey: smooth, intentional audio emphasis — never jittery
-        if (currentEnergyMode === 'highkey') {
-          let glitchTimer = null;
-          const scheduleGlitch = () => {
-            const delay = 4000 + Math.random() * 6000;
-            glitchTimer = setTimeout(() => {
-              if (!this.isSpeaking) return;
-              const orig = gainNode.gain.value;
-              const target = 1.2 + Math.random() * 0.2;
-              const steps = 8;
-              let step = 0;
-              const ramp = setInterval(() => {
-                step++;
-                if (step <= steps / 2) {
-                  gainNode.gain.value = orig + (target - orig) * (step / (steps / 2));
-                } else {
-                  gainNode.gain.value = target - (target - orig) * ((step - steps / 2) / (steps / 2));
-                }
-                if (step >= steps) { clearInterval(ramp); gainNode.gain.value = orig; }
-              }, 40);
-              scheduleGlitch();
-            }, delay);
-          };
-          scheduleGlitch();
-          source._glitchTimer = glitchTimer;
-        }
+        // Smooth, intentional audio emphasis — never jittery
+        let glitchTimer = null;
+        const scheduleGlitch = () => {
+          const delay = 4000 + Math.random() * 6000;
+          glitchTimer = setTimeout(() => {
+            if (!this.isSpeaking) return;
+            const orig = gainNode.gain.value;
+            const target = 1.2 + Math.random() * 0.2;
+            const steps = 8;
+            let step = 0;
+            const ramp = setInterval(() => {
+              step++;
+              if (step <= steps / 2) {
+                gainNode.gain.value = orig + (target - orig) * (step / (steps / 2));
+              } else {
+                gainNode.gain.value = target - (target - orig) * ((step - steps / 2) / (steps / 2));
+              }
+              if (step >= steps) { clearInterval(ramp); gainNode.gain.value = orig; }
+            }, 40);
+            scheduleGlitch();
+          }, delay);
+        };
+        scheduleGlitch();
+        source._glitchTimer = glitchTimer;
 
         this.currentSource = source;
         this.currentGain = gainNode;
@@ -3934,7 +3659,7 @@ class PlaybackController {
     }
 
     // No cached audio — live TTS: fetch headline + summary in parallel, then join
-    const summaryText = (currentEnergyMode === 'highkey' && story.summaryHighkey) ? story.summaryHighkey : story.summary;
+    const summaryText = story.summaryHighkey || story.summary;
     const [liveHeadline, liveSummary] = await Promise.all([
       this.speech.fetchTTSBuffer(story.headline, story.emotion, true),
       this.speech.fetchTTSBuffer(summaryText, story.emotion, false)
@@ -4823,11 +4548,9 @@ class MaxHeadlineApp {
       skull:   ['Mortimer rising from grave...', 'Reassembling jaw bone...', 'Dusting off the crypt...'],
       fox:     ['Voxel stretching...', 'Sharpening those instincts...', 'Adjusting the fur...'],
       octopus: ['Inkwell surfacing...', 'Untangling tentacles...', 'Squirting some ink...'],
-      alien:   ['Zyx-9 establishing contact...', 'Translating to Earth...', 'Adjusting frequencies...'],
       owl:     ['Hootspa waking up...', 'Rotating head 270 degrees...', 'Getting reading glasses...'],
       cat:     ['Whiskers napping... one sec...', 'Knocking things off desk...', 'Stretching... slowly...'],
-      wizard:  ['Glitch consulting the orb...', 'Gathering arcane notes...', 'Enchanting the mic...'],
-      mask:    ['Persona choosing a face...', 'Rehearsing emotions...', 'Stage makeup check...']
+      wizard:  ['Glitch consulting the orb...', 'Gathering arcane notes...', 'Enchanting the mic...']
     };
 
     const msgs = loadingMessages[charId] || [`${charName} getting ready...`];
@@ -4922,11 +4645,9 @@ class MaxHeadlineApp {
       skull:   { bg: '#263238', border: '#607D8B', glow: 'rgba(96,125,139,0.5)' },
       fox:     { bg: '#BF360C', border: '#FF6E40', glow: 'rgba(255,110,64,0.5)' },
       octopus: { bg: '#6A1B9A', border: '#CE93D8', glow: 'rgba(171,71,188,0.5)' },
-      alien:   { bg: '#1B5E20', border: '#76FF03', glow: 'rgba(118,255,3,0.5)' },
       owl:     { bg: '#3E2723', border: '#A1887F', glow: 'rgba(141,110,99,0.5)' },
       cat:     { bg: '#E65100', border: '#FFB74D', glow: 'rgba(255,183,77,0.5)' },
-      wizard:  { bg: '#311B92', border: '#B388FF', glow: 'rgba(124,77,255,0.5)' },
-      mask:    { bg: '#F57F17', border: '#FFD54F', glow: 'rgba(255,213,79,0.5)' }
+      wizard:  { bg: '#311B92', border: '#B388FF', glow: 'rgba(124,77,255,0.5)' }
     };
     // Helper: render emoji to white canvas image
     const makeWhiteEmoji = (emoji) => {
@@ -5016,25 +4737,6 @@ class MaxHeadlineApp {
       }
     });
 
-    // Energy mode selector — two stacked buttons
-    document.querySelectorAll('.energy-opt').forEach(btn => {
-      btn.addEventListener('click', () => {
-        const energy = btn.dataset.energy;
-        if (energy === currentEnergyMode) return;
-        currentEnergyMode = energy;
-        document.querySelectorAll('.energy-opt').forEach(b => b.classList.remove('active'));
-        btn.classList.add('active');
-        this.modeGlitchMult = energy === 'highkey' ? 1.5 : 0.5;
-        // Re-render feed to show correct summary text for energy mode
-        if (this.newsEngine && this.newsEngine.stories) { this.renderStoryFeed(); this.updateHeadlineTicker(); }
-        // If currently playing, restart with new energy mode
-        if (this.playback && this.playback.isPlaying) {
-          const idx = this.playback.currentIndex;
-          this.playback.stop();
-          setTimeout(() => this.playback.playStory(idx), 100);
-        }
-      });
-    });
   }
 
   updateAutoplayBtn() {
@@ -5108,7 +4810,7 @@ class MaxHeadlineApp {
       const sevLabel = story.severity >= 9 ? 'CRITICAL' : story.severity >= 7 ? 'HIGH IMPACT' : story.severity >= 4 ? 'MODERATE' : 'LOW IMPACT';
 
       const summaryBullets = story.summary.split(/(?<=[.!?])\s+/).filter(s => s.trim()).map(s => `<li>${s.trim()}</li>`).join('');
-      const realStoryHtml = (currentEnergyMode === 'highkey' && story.summaryHighkey)
+      const realStoryHtml = story.summaryHighkey
         ? `<div class="story-realstory"><div class="story-realstory-label">The Real Story</div><p>${story.summaryHighkey}</p></div>`
         : '';
 
