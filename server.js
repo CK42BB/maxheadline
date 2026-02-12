@@ -653,7 +653,6 @@ app.post('/api/news', async (req, res) => {
     }
   }
   res.status(503).json({ error: 'Stories not available yet. Next refresh at 6am/6pm ET.' });
-  }
 });
 
 // GET /api/audio/:characterId/:storyId/:energy — serve pre-generated audio
