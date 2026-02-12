@@ -1,0 +1,103 @@
+{
+  "mode": "everything",
+  "stories": [
+    {
+      "id": "canada-school-massacre",
+      "headline": "Canada Reels from Deadly School Shooting",
+      "summary": "A mass shooting in Tumbler Ridge, British Columbia left nine people dead including the 18-year-old shooter. Six victims were found at the school, with two more at a nearby residence. The remote community of 2,400 is devastated.",
+      "summaryHighkey": "Here's what the headlines won't tell you—this is Canada's deadliest school shooting since 1989, shattering the myth that strict gun laws make this impossible. The shooter had a documented mental health history with police, dropped out four years ago, then returned to a school of just 160 students. The REAL story? How a tiny mountain town with 'family-level' connections becomes ground zero for examining whether gun control actually works or if we're just avoiding the harder conversation about early intervention systems that clearly failed here.",
+      "emotion": "alarmed",
+      "severity": 9,
+      "source": "CNN",
+      "sourceUrl": "https://www.cnn.com/world/live-news/tumbler-ridge-canada-shooting-02-11-26",
+      "imageUrl": "https://media.cnn.com/api/v1/images/stellar/prod/ap26042367563495.jpg?c=16x9&q=w_800,c_fill",
+      "category": "world"
+    },
+    {
+      "id": "iran-nuclear-talks",
+      "headline": "Trump-Netanyahu Meeting Amid Iran Nuclear Tensions",
+      "summary": "President Trump met with Israeli PM Netanyahu as tensions escalate over U.S.-Iran nuclear negotiations. The Pentagon has deployed a second aircraft carrier strike group to the Middle East amid preparations for possible military action if talks fail.",
+      "summaryHighkey": "Follow the chess pieces: Trump's playing maximum pressure poker with aircraft carriers while negotiating through Oman, Netanyahu's pushing to expand talks beyond nukes to include missiles and regional proxies, and Iran's saying 'missiles are non-negotiable.' The REAL game? Trump wants a legacy deal but needs leverage. Israel wants regime change but settles for containment. Iran's racing to 1,000 warheads by 2030. Everyone's got incompatible goals but catastrophic alternatives, which is exactly how we got the original Iran deal—and how it collapsed. Round two, same players, higher stakes.",
+      "emotion": "sarcastic",
+      "severity": 8,
+      "source": "Times of Israel",
+      "sourceUrl": "https://www.timesofisrael.com/liveblog-february-11-2026/",
+      "imageUrl": "https://static-cdn.toi-media.com/www/uploads/2025/11/AFP__20251103__82V33NM__v2__HighRes__TopshotPalestinianIsraelConflictGaza-e1762592698419.jpg",
+      "category": "world"
+    },
+    {
+      "id": "bondi-house-testimony",
+      "headline": "AG Bondi Clashes with Democrats Over Epstein Files",
+      "summary": "Attorney General Pam Bondi sparred with House Democrats during contentious testimony over heavily redacted Epstein documents and DOJ targeting of Trump's political opponents. Survivors attended the hearing demanding transparency and accountability.",
+      "summaryHighkey": "Watch the power dynamics: Bondi came prepared with opposition research on every committee member, deflecting questions about why elite names stay redacted while survivors watch from the gallery. Democrats are hammering accountability, Republicans are defending the pick, and NOBODY's talking about the actual structural incentives—why DOJ historically protects powerful people, why successive administrations classify documents for 'national security,' why survivors have to BEG for meetings. This isn't about one AG. It's about an entire system that treats elite criminality as a diplomatic problem instead of a law enforcement one.",
+      "emotion": "outraged",
+      "severity": 7,
+      "source": "CNN",
+      "sourceUrl": "https://edition.cnn.com/politics/live-news/pam-bondi-house-hearing-02-11-26",
+      "imageUrl": "https://media.cnn.com/api/v1/images/stellar/prod/2025-12-15t211225z-761309334-rc28hiatthh5-rtrmadp-3-usa-trump-20260129164149509.JPG?c=16x9&q=w_800,c_fill",
+      "category": "politics"
+    },
+    {
+      "id": "us-jobs-report",
+      "headline": "U.S. Adds 130K Jobs in January",
+      "summary": "U.S. employers added 130,000 jobs last month as the unemployment rate dipped to 4.3% from 4.4%. However, annual revisions reveal that job growth in 2025 was far weaker than initially reported.",
+      "summaryHighkey": "Here's the translation: The headline number looks decent—130K jobs, unemployment down—but the revisions are DEVASTATING. They're quietly rewriting 2025's 'strong economy' narrative downward, which means every policy decision for the past year was based on inflated data. The Fed held rates based on numbers that turned out to be fiction. This is why markets are jittery despite 'good news'—everyone's realizing the economic ground under their feet was softer than advertised. Real-time data is a guess, revisions are reality, and reality just got worse retroactively.",
+      "emotion": "excited",
+      "severity": 6,
+      "source": "NPR",
+      "sourceUrl": "https://www.npr.org/sections/news/",
+      "imageUrl": "https://media.npr.org/include/images/facebook-default-wide-s1400-c85.jpg",
+      "category": "economy"
+    },
+    {
+      "id": "china-nuclear-testing",
+      "headline": "U.S. Accuses China of Secret Nuclear Tests",
+      "summary": "The U.S. revealed that China conducted nuclear explosive tests in 2020 and is preparing tests with yields in the hundreds of tons. China denies the allegations. Arms control experts warn this signals the unraveling of global norms against nuclear testing.",
+      "summaryHighkey": "This is HUGE but everyone's missing the context: The U.S. dropped this bombshell days after the New START treaty with Russia expired, creating a vacuum in nuclear arms control. Why now? Because the U.S. wants a NEW treaty that includes China, and you don't get Beijing to the table by asking nicely. China's arsenal is exploding from 200 warheads in 2019 to a projected 1,000 by 2030—the fastest buildup since the Cold War—and nobody knows why because Beijing won't say. The allegations might be true, might be posturing, but the REAL story is that the nuclear order is collapsing in real-time and we're back to guessing about who's testing what.",
+      "emotion": "alarmed",
+      "severity": 9,
+      "source": "NPR",
+      "sourceUrl": "https://www.npr.org/2026/02/11/nx-s1-5707495/china-us-nuclear-weapons-testing-trump",
+      "imageUrl": "https://npr.brightspotcdn.com/dims3/default/strip/false/crop/4231x2821+0+0/resize/4231x2821!/?url=http%3A%2F%2Fnpr-brightspot.s3.amazonaws.com%2F0e%2F8b%2Fe51ce8a24d81b0eca5ff7b45e526%2Fgettyimages-2232840898.jpg",
+      "category": "world"
+    },
+    {
+      "id": "ai-europe-accelerator",
+      "headline": "Big Tech Launches AI Accelerator in Europe",
+      "summary": "Meta, Microsoft, Google, Anthropic, OpenAI, and Mistral are collaborating on a European AI accelerator program at Station F, offering startups compute credits and integrations to build on their platforms and ecosystems.",
+      "summaryHighkey": "THIS is the real AI battle—not who has the best model, but who controls the NEXT generation of developers. Every company's handing out compute credits like candy because once a startup builds on your infrastructure, switching costs are BRUTAL. Europe's the battleground because it's got talent but lacks domestic AI giants, making it the perfect recruiting ground. The big winners? Whoever captures developer mindshare now. The losers? Anyone building on the 'wrong' stack when the dust settles. This is platform warfare disguised as generosity, and the prize is nothing less than owning the application layer of the AI economy.",
+      "emotion": "excited",
+      "severity": 5,
+      "source": "Tech Startups",
+      "sourceUrl": "https://techstartups.com/2026/02/11/top-tech-news-today-february-11-2026/",
+      "imageUrl": "https://techstartups.com/wp-content/uploads/2024/05/Microsoft.jpg",
+      "category": "tech"
+    },
+    {
+      "id": "climate-acceleration",
+      "headline": "Climate Warming Accelerating at Fastest Rate Ever",
+      "summary": "The fastest warming period since 1880 occurred in the past 30 years, according to NASA data analysis. The acceleration is partly due to reduced sulfate aerosols from cleaner air regulations, which had been masking warming effects.",
+      "summaryHighkey": "The paradox nobody talks about: We cleaned up air pollution to save lives—and accidentally removed the 'sunscreen' that was hiding half a degree of warming. Sulfate aerosols from coal and ships were reflecting sunlight, masking climate change's full impact. Now we've cut sulfur emissions by 40% globally, and BAM—the hidden warming appears like compound interest coming due. This isn't 'climate change getting worse'—it was ALWAYS this bad, we just couldn't see it through the smog. The terrifying part? We did the right thing for public health, but it means adaptation timelines just collapsed. Reality was worse than we thought, we just had dirty air goggles on.",
+      "emotion": "alarmed",
+      "severity": 8,
+      "source": "Washington Post",
+      "sourceUrl": "https://www.washingtonpost.com/climate-environment/interactive/2026/climate-change-temperature-rate-accelerating/",
+      "imageUrl": "https://dims.apnews.com/dims4/default/3f14613/2147483647/strip/false/crop/3000x2000+0+0/resize/980x653!/quality/90/?url=https%3A%2F%2Fassets.apnews.com%2Fab%2F6e%2F4f5f554fb3fb2d8a31bd6baebb8e%2F1c2221d74d734ea5b50d3e8a0f77dba1",
+      "category": "environment"
+    },
+    {
+      "id": "winter-olympics-2026",
+      "headline": "Team USA Claims Gold at Winter Olympics",
+      "summary": "Jordan Stolz won gold in men's 1,000-meter speed skating as Team USA collected seven medals on Day 5 of Milano Cortina 2026. Norway leads overall with 13 medals, followed by host nation Italy also with 13 but fewer golds.",
+      "summaryHighkey": "The Olympics are back in Italy and the home crowd advantage is REAL—Italy's tied with Norway at 13 medals and their athletes are performing on home ice in front of passionate crowds. Stolz is America's speed skating phenom delivering gold, but the meta-story is how modern Winter Olympics are becoming geographically exclusive—you basically need mountains, money, and infrastructure. Italy's fourth time hosting shows the same wealthy nations keep rotating the privilege. Also fascinating: host nations consistently overperform (see Italy's 13 medals) because home advantage in winter sports is MASSIVE when you train on the actual Olympic venues for years.",
+      "emotion": "excited",
+      "severity": 3,
+      "source": "Yahoo Sports",
+      "sourceUrl": "https://sports.yahoo.com/olympics/article/winter-olympics-2026-medal-count-team-usa-jumps-to-7-after-historic-day-in-italy-still-trails-norway-010830382.html",
+      "imageUrl": "https://s.yimg.com/ny/api/res/1.2/lPwfLSUXd7OAnIiZ4hThYQ--/YXBwaWQ9aGlnaGxhbmRlcjt3PTEyMDA7aD04MDA7Y2Y9d2VicA--/https://s.yimg.com/os/creatr-uploaded-images/2026-02/7c948b20-0794-11f1-a7fe-330cbaf94d20",
+      "category": "culture"
+    }
+  ],
+  "fetchedAt": "2026-02-11T23:26:36.249Z",
+  "fetchedAtET": "2/11/2026, 6:26:36 PM"
+}

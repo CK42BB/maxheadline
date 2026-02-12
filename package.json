@@ -1,0 +1,13 @@
+{
+  "name": "maxheadline",
+  "version": "1.0.0",
+  "description": "Max Headroom style AI newsreader with vaporwave aesthetic",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.21.0",
+    "dotenv": "^16.4.0"
+  }
+}

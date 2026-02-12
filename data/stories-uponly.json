@@ -1,0 +1,103 @@
+{
+  "mode": "uponly",
+  "stories": [
+    {
+      "id": "zika-drug-breakthrough",
+      "headline": "Major Zika Virus Drug Discovery Announced",
+      "summary": "IRBM researchers have discovered a novel and potent allosteric inhibitor targeting the Zika virus protease. The breakthrough was funded by the Region of Lazio and opens a promising path toward targeted antiviral therapies.",
+      "summaryHighkey": "Listen—THIS is what happens when public-private partnerships actually WORK! IRBM just cracked a novel Zika protease inhibitor, and here's why this matters: Zika devastates pregnancies, right? This allosteric inhibitor goes after the virus's NS2B-NS3 protease—the molecular machinery it NEEDS to replicate. Italy's Lazio region funded this through CNCCS, a coalition literally designed to bridge academic research and pharma development for neglected diseases. They're not chasing blockbuster profits—they're solving problems nobody else will touch. That's the model that changes lives.",
+      "emotion": "excited",
+      "severity": 5,
+      "source": "Laotian Times",
+      "sourceUrl": "https://laotiantimes.com/2026/02/10/irbm-reports-breakthrough-in-zika-virus-drug-discovery/",
+      "imageUrl": "https://dims.apnews.com/dims4/default/3f14613/2147483647/strip/false/crop/3000x2000+0+0/resize/980x653!/quality/90/?url=https%3A%2F%2Fassets.apnews.com%2Fab%2F6e%2F4f5f554fb3fb2d8a31bd6baebb8e%2F1c2221d74d734ea5b50d3e8a0f77dba1",
+      "category": "health"
+    },
+    {
+      "id": "renewable-overtakes-coal",
+      "headline": "Renewables Overtake Coal as Largest Power Source",
+      "summary": "In 2026, renewable energy generation is expected to reach 11,900 TWh, surpassing coal as the world's largest source of electricity generation for the first time in decades. Solar and wind installations exceeded 800 gigawatts last year.",
+      "summaryHighkey": "We just hit the tipping point, folks! For DECADES coal dominated 40% of the energy mix—and in 2026, renewables OVERTAKE it as the #1 power source globally. This isn't hype, it's economics: solar and wind are now TOO CHEAP to ignore. Even with policy headwinds, 4.5 terawatts of new capacity are coming in the next five years. The grid is flipping, and once that infrastructure is built, it doesn't un-flip. This is the S-curve acceleration—the 'suddenly' after years of 'gradually.' Energy transitions are one-way doors.",
+      "emotion": "excited",
+      "severity": 7,
+      "source": "Rystad Energy",
+      "sourceUrl": "https://www.rystadenergy.com/insights/five-things-to-watch-in-the-global-power-sector-in-2026",
+      "imageUrl": "https://www.datocms-assets.com/75979/1738935794-istock-1257534884.jpg?auto=format&amp;fit=max&amp;w=1200",
+      "category": "environment"
+    },
+    {
+      "id": "battery-storage-100gw",
+      "headline": "Global Battery Storage Hits Historic 100GW Milestone",
+      "summary": "Annual global energy storage installations are expected to exceed 100GW for the first time in 2026. Equipment prices have dropped to $117/kWh—less than a third of what they cost three years ago.",
+      "summaryHighkey": "HERE'S the infrastructure revolution nobody's talking about enough! Battery storage just crossed 100 GIGAWATTS annually, and costs collapsed by 66% in THREE YEARS. You know what that solves? The intermittency problem that fossil fuel advocates have weaponized for decades. Solar floods the grid midday? Store it. Wind dies at night? Batteries handle it. This tipping point arrived EXACTLY when renewables needed it most to maintain momentum. The timing isn't luck—it's economies of scale kicking in. Storage de-risks the entire energy transition.",
+      "emotion": "excited",
+      "severity": 6,
+      "source": "BloombergNEF",
+      "sourceUrl": "https://about.bnef.com/insights/clean-energy/progress-despite-fragmentation-the-energy-transition-to-2030/",
+      "imageUrl": "https://assets.bbhub.io/image/v1/convert?type=auto&amp;url=https%3A%2F%2Fassets.bbhub.io%2Fprofessional%2Fsites%2F44%2FGettyImages-2211702310-2-3-1.jpg",
+      "category": "tech"
+    },
+    {
+      "id": "wood-stork-delisted",
+      "headline": "Wood Stork Removed from Endangered Species List",
+      "summary": "The U.S. Fish and Wildlife Service officially removed the wood stork from the federal list of endangered and threatened wildlife, marking a landmark victory for wildlife conservation and decades of recovery efforts.",
+      "summaryHighkey": "This is PROOF that the Endangered Species Act WORKS when we fund it and follow through! Wood storks were circling extinction—and now they're THRIVING enough to come OFF the list. What changed? Wetland restoration, nesting site protection, and sustained investment in habitat. This didn't happen by accident or market forces—it happened because conservationists fought for funding, scientists monitored populations, and policy held the line. Every delisting is a receipt: conservation delivers when we actually do it.",
+      "emotion": "hopeful",
+      "severity": 4,
+      "source": "WRHI",
+      "sourceUrl": "https://www.wrhi.com/2026/02/wood-stork-soars-off-endangered-species-list-following-state-recovery-success-209828",
+      "imageUrl": "https://dims.apnews.com/dims4/default/3f14613/2147483647/strip/false/crop/3000x2000+0+0/resize/980x653!/quality/90/?url=https%3A%2F%2Fassets.apnews.com%2Fab%2F6e%2F4f5f554fb3fb2d8a31bd6baebb8e%2F1c2221d74d734ea5b50d3e8a0f77dba1",
+      "category": "environment"
+    },
+    {
+      "id": "textile-recycling-breakthrough",
+      "headline": "Breakthrough Textile Recycling Process Reaches Demonstration Phase",
+      "summary": "Researchers at Avantium and University of Amsterdam developed a chemical recycling process that separates cotton and polyester from mixed-waste textiles, achieving 75% cotton recovery and 78% polyester recovery. The technology moves to demonstration plant in 2026.",
+      "summaryHighkey": "Fast fashion's waste nightmare just met its match! Mixed-fabric textiles—cotton-polyester blends—have been IMPOSSIBLE to recycle economically. They hit landfills or get downcycled into rags. But Avantium cracked it: hydrochloric acid at room temp splits the fibers, recovering 75-78% as virgin-quality materials. And HERE'S the incentive structure that makes it real: Netherlands EPR regulations now legally REQUIRE fashion brands to PAY for textile waste processing. That's not charity—that's a market signal that makes recycling economically competitive. Demonstration plant opens THIS YEAR with 100,000-ton annual capacity targeted by 2030. Circular economy infrastructure, actually scaling.",
+      "emotion": "excited",
+      "severity": 5,
+      "source": "CAS Insights",
+      "sourceUrl": "https://www.cas.org/resources/cas-insights/scientific-breakthroughs-2026-emerging-trends-watch",
+      "imageUrl": "https://cdn.prod.website-files.com/650867962272bf8f15c1034b/692da5a43ed15a57aaebbce0_Trends-to-watch-2026-Social-CAS-Insights-INSSOC102780ENG-Article.avif",
+      "category": "science"
+    },
+    {
+      "id": "rhino-zero-poaching",
+      "headline": "Kenya Rhino Sanctuaries Achieve Zero Poaching Success",
+      "summary": "Ol Pejeta Conservancy and Solio Game Reserve, home to East Africa's largest black rhino populations, have achieved zero poaching since implementing FLIR thermal camera technology with AI detection capabilities.",
+      "summaryHighkey": "Technology meets conservation and the results are STUNNING! Thermal cameras with AI—FLIR systems deployed by WWF and Kenya Wildlife Service—detect humans and vehicles at NIGHT, send instant alerts to rangers, and response times collapse. The outcome? ZERO rhino poaching at two of East Africa's most critical sanctuaries since implementation. Black rhinos are critically endangered—every single animal matters. This isn't just gadgets, it's force multiplication for under-resourced rangers protecting irreplaceable wildlife. And it's scalable: what works in Kenya works everywhere poaching threatens species.",
+      "emotion": "hopeful",
+      "severity": 6,
+      "source": "World Wildlife Fund",
+      "sourceUrl": "https://www.worldwildlife.org/news/stories/conservation-highlights-of-2025/",
+      "imageUrl": "https://dims.apnews.com/dims4/default/3f14613/2147483647/strip/false/crop/3000x2000+0+0/resize/980x653!/quality/90/?url=https%3A%2F%2Fassets.apnews.com%2Fab%2F6e%2F4f5f554fb3fb2d8a31bd6baebb8e%2F1c2221d74d734ea5b50d3e8a0f77dba1",
+      "category": "environment"
+    },
+    {
+      "id": "north-atlantic-right-whales",
+      "headline": "Record Right Whale Calves Spotted Off Southeast",
+      "summary": "Researchers have identified 21 North Atlantic right whale calves so far this season—the largest number in 15 years. With only 380 right whales remaining and just 70 reproductive females, this represents significant hope for species recovery.",
+      "summaryHighkey": "Twenty-one calves—that's the biggest baby boom for North Atlantic right whales in FIFTEEN YEARS! With only 380 of these whales left on EARTH and just 70 breeding females, every calf is a demographic miracle. What's driving this? Vessel strike protections, fishing gear modifications, and protected calving areas off Georgia and Florida. These are POLICY victories translating into baby whales. Calving season runs through April, so more could be spotted. This species was commercially hunted to near-extinction—and now we're seeing what happens when humans actually protect instead of exploit. That's the hopeful part: when we choose differently, nature responds.",
+      "emotion": "hopeful",
+      "severity": 7,
+      "source": "Endangered Species Conservation Site",
+      "sourceUrl": "https://esconservsite.org/news-views/",
+      "imageUrl": "https://s0.wp.com/i/blank.jpg?m=1383295312i",
+      "category": "environment"
+    },
+    {
+      "id": "species-discovery-acceleration",
+      "headline": "We're Living in Golden Age of Species",
+      "summary": "Scientists are discovering approximately 16,000 new species every year, with the pace accelerating. University of Arizona research shows advances in molecular techniques are helping identify previously unrecognized bacteria, fungi, and cryptic species—opening doors to conservation and medical breakthroughs.",
+      "summaryHighkey": "We're finding 16,000 NEW SPECIES a year and the rate is ACCELERATING! Here's why this matters beyond cool nature facts: you can't PROTECT what you don't know exists. Every newly described species gets legal standing for conservation. And molecular techniques—DNA barcoding, genetic analysis—are revealing 'cryptic species' that LOOK similar but are genetically distinct. Insects alone? Formally identified 1.1 million species, but estimates range to 6-20 million actual species. Fungi, bacteria—most life on Earth is still UNKNOWN to science. Each discovery is a doorway: new medicines, ecosystem insights, evolutionary understanding. We're cataloging the library of life while it still exists. That's urgent and beautiful at the same time.",
+      "emotion": "excited",
+      "severity": 5,
+      "source": "ScienceDaily",
+      "sourceUrl": "https://www.sciencedaily.com/releases/2025/12/251224032345.htm",
+      "imageUrl": "https://www.sciencedaily.com/images/1920/indian-lanternfly.webp",
+      "category": "science"
+    }
+  ],
+  "fetchedAt": "2026-02-11T23:30:15.179Z",
+  "fetchedAtET": "2/11/2026, 6:30:15 PM"
+}

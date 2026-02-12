@@ -1,0 +1,6 @@
+node_modules/
+.env
+.DS_Store
+data/audio/
+data/stats.json
+memes/
