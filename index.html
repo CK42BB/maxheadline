@@ -36,6 +36,7 @@ body {
   width: 100%;
   height: 100%;
 }
+#app.app-hidden { display: none; }
 
 /* ========== NEWS PANEL (LEFT) ========== */
 #news-panel {
@@ -235,6 +236,61 @@ body {
 .story-play:hover {
   background: rgba(0,240,255,0.2);
   box-shadow: 0 0 10px rgba(0,240,255,0.3);
+}
+
+/* ========== SPLASH SCREEN ========== */
+#splash {
+  position: fixed; inset: 0; z-index: 9999;
+  background: var(--bg-deep);
+  display: flex; align-items: center; justify-content: center;
+  transition: opacity 0.6s ease, visibility 0.6s ease;
+}
+#splash.hidden { opacity: 0; visibility: hidden; pointer-events: none; }
+#splash-inner { text-align: center; }
+#splash-title {
+  font-family: 'VT323', monospace;
+  font-size: 64px;
+  color: var(--neon-cyan);
+  letter-spacing: 8px;
+  margin-bottom: 4px;
+}
+#splash-subtitle {
+  font-family: 'Space Mono', monospace;
+  font-size: 13px;
+  color: var(--neon-pink);
+  letter-spacing: 6px;
+  text-transform: uppercase;
+  margin-bottom: 40px;
+}
+#splash-status {
+  font-family: 'VT323', monospace;
+  font-size: 16px;
+  color: var(--text-dim);
+  margin-bottom: 12px;
+  min-height: 20px;
+}
+#splash .loading-bar { margin: 0 auto 32px auto; }
+#splash-go {
+  font-family: 'VT323', monospace;
+  font-size: 28px;
+  letter-spacing: 4px;
+  color: var(--bg-deep);
+  background: linear-gradient(135deg, var(--neon-cyan), var(--neon-pink));
+  border: none;
+  padding: 14px 48px;
+  cursor: pointer;
+  border-radius: 4px;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+  box-shadow: 0 0 20px rgba(0,240,255,0.3), 0 0 40px rgba(255,45,149,0.2);
+}
+#splash-go:hover {
+  transform: scale(1.05);
+  box-shadow: 0 0 30px rgba(0,240,255,0.5), 0 0 60px rgba(255,45,149,0.3);
+}
+#splash-go:active { transform: scale(0.97); }
+@media (max-width: 768px) {
+  #splash-title { font-size: 40px; letter-spacing: 4px; }
+  #splash-go { font-size: 22px; padding: 12px 36px; }
 }
 
 /* Loading State */
@@ -517,7 +573,18 @@ body.ui-hidden #char-name {
 </style>
 </head>
 <body>
-<div id="app">
+<!-- ========== SPLASH SCREEN ========== -->
+<div id="splash">
+  <div id="splash-inner">
+    <div id="splash-title" class="glitch-text" data-text="MAXHEADLINE">MAXHEADLINE</div>
+    <div id="splash-subtitle">AI NEWSREADER</div>
+    <div id="splash-status">Initializing broadcast...</div>
+    <div class="loading-bar" id="splash-bar"><div class="loading-fill" id="splash-fill"></div></div>
+    <button id="splash-go" style="display:none;">LET'S NEWS</button>
+  </div>
+</div>
+
+<div id="app" class="app-hidden">
   <div id="news-panel">
     <div id="panel-header">
       <h1>MAXHEADLINE</h1>
@@ -3904,7 +3971,8 @@ class MaxHeadlineApp {
     this.shadesVisible = true;
   }
 
-  async init() {
+  // Phase 1: Build 3D scene, characters, UI — no audio, no autoplay
+  async initScene() {
     const viewport = document.getElementById('viewport');
     const canvas = document.getElementById('broadcast-canvas');
 
@@ -4094,8 +4162,10 @@ class MaxHeadlineApp {
     window.addEventListener('keydown', showUI);
     // Start the initial timer
     uiIdleTimer = setTimeout(() => document.body.classList.add('ui-hidden'), 3000);
+  }
 
-    // Fetch initial news
+  // Phase 2: Fetch news (called during splash screen)
+  async initNews() {
     this.showLoading();
     await this.newsEngine.fetchNews('everything', CHARACTER_META[this.currentCharacterId].name);
     this.renderStoryFeed();
@@ -4104,9 +4174,53 @@ class MaxHeadlineApp {
       await this.storyHero.loadStoryImages(this.newsEngine.stories);
       this.storyHero.setActiveStory(0);
     }
+  }
 
-    // Intro greeting
-    this.doIntroGreeting();
+  // Phase 3: User clicked "LET'S NEWS" — AudioContext is active, start playback
+  async launchBroadcast() {
+    // Pre-fetch first story audio before starting playback
+    if (this.newsEngine.stories.length > 0) {
+      const firstStory = this.newsEngine.stories[0];
+      try {
+        // Pre-fetch intro + first story audio in parallel
+        const introPromise = this.speech.fetchTTSBuffer("Here's what happened today.", 'amused', true);
+        const headlinePromise = this.speech.fetchAudio(`${firstStory.id}-headline`);
+        const summaryPromise = this.speech.fetchAudio(`${firstStory.id}-summary`);
+        const [introBuf] = await Promise.all([introPromise, headlinePromise, summaryPromise]);
+
+        // Play intro
+        if (introBuf) await this.speech.playBuffer(introBuf, 'amused');
+      } catch (e) { /* skip intro if TTS unavailable */ }
+
+      // Start autoplay
+      this.playback.isAutoplay = true;
+      this.updateAutoplayBtn();
+      this.playback.playStory(0);
+
+      // Lazy load remaining stories' audio in background
+      this._lazyLoadAudio();
+    }
+  }
+
+  // Background audio preload for upcoming stories
+  _lazyLoadAudio() {
+    const stories = this.newsEngine.stories;
+    if (stories.length <= 1) return;
+
+    let i = 1;
+    const loadNext = async () => {
+      if (i >= stories.length) return;
+      const story = stories[i];
+      try {
+        await this.speech.fetchAudio(`${story.id}-headline`);
+        await this.speech.fetchAudio(`${story.id}-summary`);
+      } catch (e) { /* non-critical */ }
+      i++;
+      // Small delay to avoid hammering server
+      setTimeout(loadNext, 200);
+    };
+    // Start after a short delay to prioritize first story playback
+    setTimeout(loadNext, 1000);
   }
 
   // ---------- SCENE ----------
@@ -4758,19 +4872,8 @@ class MaxHeadlineApp {
     }
   }
 
-  async doIntroGreeting() {
-    await new Promise(r => setTimeout(r, 400));
-    if (this.newsEngine.stories.length === 0) return;
-    // Try intro TTS but don't block autoplay if it fails
-    try {
-      const buf = await this.speech.fetchTTSBuffer("Here's what happened today.", 'amused', true);
-      if (buf) await this.speech.playBuffer(buf, 'amused');
-    } catch (e) { /* skip intro if TTS unavailable */ }
-    // Enable autoplay and start from story 0
-    this.playback.isAutoplay = true;
-    this.updateAutoplayBtn();
-    this.playback.playStory(0);
-  }
+  // Legacy — replaced by launchBroadcast() splash flow
+  async doIntroGreeting() { this.launchBroadcast(); }
 
   // ---------- RENDER ----------
 
@@ -4948,20 +5051,58 @@ class MaxHeadlineApp {
 }
 
 // =====================================================================
-// BOOT
+// BOOT — Two-phase: background init, then user-triggered launch
 // =====================================================================
 let appBooted = false;
-function boot() {
+let appInstance = null;
+
+async function bootBackground() {
   if (appBooted) return;
   appBooted = true;
-  const app = new MaxHeadlineApp();
-  app.init().catch(err => console.error('App init failed:', err));
+
+  const splash = document.getElementById('splash');
+  const status = document.getElementById('splash-status');
+  const goBtn = document.getElementById('splash-go');
+  const bar = document.getElementById('splash-bar');
+
+  // Phase 1: Build scene + fetch news in background (no audio yet)
+  status.textContent = 'Building broadcast stage...';
+  appInstance = new MaxHeadlineApp();
+
+  try {
+    await appInstance.initScene();
+    status.textContent = 'Scanning frequencies...';
+    await appInstance.initNews();
+    status.textContent = 'Signal locked.';
+  } catch (err) {
+    console.error('Init failed:', err);
+    status.textContent = 'Broadcast ready.';
+  }
+
+  // Show the button, hide loading bar
+  bar.style.display = 'none';
+  goBtn.style.display = 'inline-block';
+
+  // Phase 2: User clicks "LET'S NEWS" — satisfies AudioContext gesture
+  goBtn.addEventListener('click', () => {
+    // Create AudioContext inside user gesture
+    appInstance.speech._ensureAudioContext();
+
+    // Fade out splash, show app
+    splash.classList.add('hidden');
+    document.getElementById('app').classList.remove('app-hidden');
+    appInstance.onResize();
+
+    // Start playback + lazy load audio in background
+    appInstance.launchBroadcast();
+
+    // Remove splash from DOM after transition
+    setTimeout(() => splash.remove(), 700);
+  });
 }
 
 window.addEventListener('DOMContentLoaded', () => {
-  // Boot immediately — ElevenLabs doesn't need speechSynthesis voices
-  boot();
-  // Also listen for voices in case we fall back to Web Speech
+  bootBackground();
   if (typeof speechSynthesis !== 'undefined') {
     speechSynthesis.onvoiceschanged = () => speechSynthesis.getVoices();
   }
