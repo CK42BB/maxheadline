@@ -3,9 +3,9 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>MaxHeadline — AI Newsreader</title>
+<title>MaxHeadline — Robots Read Between the Lines</title>
 <meta name="description" content="A glitchy, charismatic AI news anchor with vaporwave energy">
-<meta property="og:title" content="MaxHeadline — AI Newsreader">
+<meta property="og:title" content="MaxHeadline — Robots Read Between the Lines">
 <meta property="og:description" content="Retro-futuristic AI news anchor with 8 characters, 3 modes, and Max Headroom energy">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📺</text></svg>">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -286,7 +286,7 @@ body {
   font-family: 'Space Mono', monospace;
   font-size: 13px;
   color: var(--neon-pink);
-  letter-spacing: 6px;
+  letter-spacing: 4px;
   text-transform: uppercase;
   margin-bottom: 40px;
   text-shadow: 0 0 10px rgba(255, 45, 149, 0.4);
@@ -642,7 +642,7 @@ body.ui-hidden #char-name {
 <div id="splash">
   <div id="splash-inner">
     <div id="splash-title" class="glitch-text" data-text="MAXHEADLINE">MAXHEADLINE</div>
-    <div id="splash-subtitle">AI NEWSREADER</div>
+    <div id="splash-subtitle">ROBOTS READ BETWEEN THE LINES</div>
     <div id="splash-status">Initializing broadcast...</div>
     <div class="loading-bar" id="splash-bar"><div class="loading-fill" id="splash-fill"></div></div>
     <button id="splash-go" style="display:none;">LET'S NEWS</button>
@@ -2807,7 +2807,7 @@ class SpeechManager {
     return trimmed;
   }
 
-  _ensureAudioContext() {
+  async _ensureAudioContext() {
     if (!this.audioContext) {
       this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
       this.analyser = this.audioContext.createAnalyser();
@@ -2816,8 +2816,19 @@ class SpeechManager {
       this.analyser.connect(this.audioContext.destination);
     }
     if (this.audioContext.state === 'suspended') {
-      this.audioContext.resume();
+      await this.audioContext.resume();
     }
+  }
+
+  // Unlock audio on iOS — must be called inside a user gesture
+  async unlockAudio() {
+    await this._ensureAudioContext();
+    // iOS requires a tiny buffer to be played during a gesture to unlock audio
+    const buf = this.audioContext.createBuffer(1, 1, this.audioContext.sampleRate);
+    const src = this.audioContext.createBufferSource();
+    src.buffer = buf;
+    src.connect(this.audioContext.destination);
+    src.start(0);
   }
 
   _startAmplitudeTracking() {
@@ -2847,7 +2858,7 @@ class SpeechManager {
     }
 
     try {
-      this._ensureAudioContext();
+      await this._ensureAudioContext();
       // Request audio for current character — server generates on-demand if needed
       const url = `/api/audio/${encodeURIComponent(this.characterId)}/${encodeURIComponent(storyId)}/highkey`;
       console.log(`[Audio] Fetching: ${this.characterId} / ${storyId}`);
@@ -2864,9 +2875,9 @@ class SpeechManager {
   }
 
   // Play a pre-decoded AudioBuffer — resolves when done
-  playBuffer(buffer, emotion = 'deadpan') {
-    if (!buffer) return Promise.resolve();
-    this._ensureAudioContext();
+  async playBuffer(buffer, emotion = 'deadpan') {
+    if (!buffer) return;
+    await this._ensureAudioContext();
 
     const source = this.audioContext.createBufferSource();
     source.buffer = buffer;
@@ -2948,7 +2959,7 @@ class SpeechManager {
       ? SpeechManager.HEADLINE_VOICE
       : (EMOTION_VOICE_SETTINGS[emotion] || EMOTION_VOICE_SETTINGS.deadpan);
     try {
-      this._ensureAudioContext();
+      await this._ensureAudioContext();
       const response = await fetch('/api/tts', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -2969,7 +2980,7 @@ class SpeechManager {
     const settings = EMOTION_VOICE_SETTINGS[emotion] || EMOTION_VOICE_SETTINGS.deadpan;
 
     try {
-      this._ensureAudioContext();
+      await this._ensureAudioContext();
 
       // Cancel any in-flight TTS request
       if (this._abortController) this._abortController.abort();
@@ -5270,12 +5281,12 @@ async function bootBackground() {
   goBtn.style.display = 'inline-block';
 
   // Phase 3: User clicks "LET'S NEWS" — satisfies AudioContext gesture
-  goBtn.addEventListener('click', () => {
+  goBtn.addEventListener('click', async () => {
     goBtn.disabled = true;
     goBtn.textContent = 'GOING LIVE...';
 
-    // Create AudioContext inside user gesture
-    appInstance.speech._ensureAudioContext();
+    // Create and unlock AudioContext inside user gesture (critical for mobile)
+    await appInstance.speech.unlockAudio();
 
     // Fade out transparent splash overlay
     splash.classList.add('hidden');
