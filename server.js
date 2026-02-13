@@ -123,7 +123,7 @@ async function saveCache(mode, data) {
   } catch {}
 }
 
-const STORY_PUBLIC_TTL_MS = 48 * 60 * 60 * 1000; // 48 hours — visible on site
+const STORY_PUBLIC_TTL_MS = 72 * 60 * 60 * 1000; // 72 hours — visible on site
 const STORY_RETAIN_TTL_MS = 14 * 24 * 60 * 60 * 1000; // 14 days — retained in DB
 
 // Filter stories visible to users (< 48h old)
