@@ -157,8 +157,16 @@ function pruneExpiredStories(stories) {
 // Merge new stories on top of existing, dedup by id
 function mergeStories(existingStories, newStories) {
   const now = new Date().toISOString();
-  // Tag new stories with addedAt timestamp
-  const tagged = newStories.map(s => ({ ...s, addedAt: s.addedAt || now }));
+  // Tag new stories with addedAt based on newsDate (stagger expiry) or use now
+  const tagged = newStories.map(s => {
+    if (s.addedAt) return s; // already has addedAt
+    if (s.newsDate) {
+      // Set addedAt to 6pm ET on the newsDate for staggered 72h expiry
+      const d = new Date(s.newsDate + 'T18:00:00-05:00');
+      return { ...s, addedAt: d.toISOString() };
+    }
+    return { ...s, addedAt: now };
+  });
   // Dedup: new stories replace any with the same id
   const existingIds = new Set(tagged.map(s => s.id));
   const kept = existingStories.filter(s => !existingIds.has(s.id));
@@ -356,9 +364,9 @@ async function searchForStoryImages(stories) {
 // =====================================================================
 async function fetchNewsFromAPI(mode, characterName = 'Ribbitz') {
   const searchInstructions = {
-    everything: `Find today's top 8 global news stories across politics, technology, science, culture, environment, and world events. Diverse mix.`,
-    uponly: `Find today's 8 most positive, hopeful, uplifting global news stories — scientific breakthroughs, environmental wins, medical advances, acts of kindness, progress on hard problems, good policy outcomes. Genuinely good news only.`,
-    sota: `Find today's 8 most significant state-of-the-art breakthroughs in AI, robotics, future tech, biotech, quantum computing, space tech, and frontier science. Focus on actual technical achievements, new model releases, research papers, product launches, and engineering milestones — not opinion pieces. Real advances only.`
+    everything: `Find the top 16 global news stories from the last 48 hours (Feb 12-13, 2026) across politics, technology, science, culture, environment, and world events. Diverse mix. Try to include roughly 8 stories from Feb 12 and 8 from Feb 13.`,
+    uponly: `Find the 16 most positive, hopeful, uplifting global news stories from the last 48 hours (Feb 12-13, 2026) — scientific breakthroughs, environmental wins, medical advances, acts of kindness, progress on hard problems, good policy outcomes. Genuinely good news only. Try to include roughly 8 from Feb 12 and 8 from Feb 13.`,
+    sota: `Find the 16 most significant state-of-the-art breakthroughs from the last 48 hours (Feb 12-13, 2026) in AI, robotics, future tech, biotech, quantum computing, space tech, and frontier science. Focus on actual technical achievements, new model releases, research papers, product launches, and engineering milestones — not opinion pieces. Real advances only. Try to include roughly 8 from Feb 12 and 8 from Feb 13.`
   };
 
   const toneInstructions = {
@@ -377,7 +385,7 @@ async function fetchNewsFromAPI(mode, characterName = 'Ribbitz') {
     body: JSON.stringify({
       model: 'claude-sonnet-4-5-20250929',
       max_tokens: 8192,
-      tools: [{ type: 'web_search_20250305', name: 'web_search', max_uses: 8 }],
+      tools: [{ type: 'web_search_20250305', name: 'web_search', max_uses: 12 }],
       messages: [{
         role: 'user',
         content: `You are ${characterName}, a Max Headroom style AI news anchor.
@@ -385,7 +393,7 @@ async function fetchNewsFromAPI(mode, characterName = 'Ribbitz') {
 TASK: ${searchInstructions[mode] || searchInstructions.everything}
 TONE: ${toneInstructions[mode] || toneInstructions.everything}
 
-Search for today's news. Return EXACTLY 8 stories as a JSON array. No markdown fences, no commentary — just the JSON array.
+Search for news from the last 48 hours. Return EXACTLY 16 stories as a JSON array. No markdown fences, no commentary — just the JSON array.
 
 SUMMARYHIGHKEY INSTRUCTIONS: 2-3 PUNCHY sentences MAX. Write like the smartest, most excited person at the party who cracked the code. Follow the money, name the incentive, connect ONE key dot — with infectious energy. No filler, no hedging, no long setups. ${mode === 'uponly' ? 'Be genuinely electrified — ONE killer technical detail, ONE reason it changes everything.' : 'Be razor-sharp. Specific insider detail, not rants.'}
 
@@ -394,9 +402,9 @@ SUMMARY: 1-2 sentences max. Tight newsreader copy. Under 40 words.
 SUMMARYHIGHKEY: 2-3 sentences max. Under 60 words. The real take.
 
 Return this structure (imageUrl can be null if you can't find a direct image URL):
-[{"id":"slug","headline":"Under 8 words","summary":"1-2 sentences, under 40 words","summaryHighkey":"2-3 sentences, under 60 words","emotion":"excited|sarcastic|alarmed|amused|deadpan|outraged|hopeful|bewildered","severity":5,"source":"Source Name","sourceUrl":"real article URL","imageUrl":"direct .jpg/.png/.webp URL or null","category":"politics|tech|science|culture|environment|world|economy|health"}]
+[{"id":"slug","headline":"Under 8 words","summary":"1-2 sentences, under 40 words","summaryHighkey":"2-3 sentences, under 60 words","emotion":"excited|sarcastic|alarmed|amused|deadpan|outraged|hopeful|bewildered","severity":5,"source":"Source Name","sourceUrl":"real article URL","imageUrl":"direct .jpg/.png/.webp URL or null","category":"politics|tech|science|culture|environment|world|economy|health","newsDate":"YYYY-MM-DD"}]
 
-CRITICAL: Always return JSON. sourceUrl must be real URLs from search results. severity 1=lighthearted 10=existential. KEEP IT TIGHT — every word costs money.`
+CRITICAL: Always return JSON. sourceUrl must be real URLs from search results. severity 1=lighthearted 10=existential. newsDate must be the date the story broke (YYYY-MM-DD format). KEEP IT TIGHT — every word costs money.`
       }]
     })
   });

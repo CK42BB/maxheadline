@@ -5260,10 +5260,14 @@ class MaxHeadlineApp {
         ? `<div class="story-realstory"><div class="story-realstory-label">The Real Story</div><p>${story.summaryHighkey}</p></div>`
         : '';
 
+      const storyDate = story.newsDate
+        ? new Date(story.newsDate + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+        : (story.addedAt ? new Date(story.addedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '');
+
       card.innerHTML = `
         <div class="story-header">
           <span class="story-emotion emotion-${story.emotion}">${story.category}</span>
-          <span class="story-category">${sevLabel} &bull; ${story.source}</span>
+          <span class="story-category">${storyDate ? storyDate + ' &bull; ' : ''}${sevLabel} &bull; ${story.source}</span>
         </div>
         <h3 class="story-headline">${story.headline}</h3>
         <ul class="story-summary">${summaryBullets}</ul>
