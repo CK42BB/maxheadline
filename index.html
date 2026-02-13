@@ -1899,7 +1899,7 @@ class RobotCharacter extends CharacterBase {
       new THREE.SphereGeometry(0.025, 4, 4),
       new THREE.MeshStandardMaterial({ color: 0x39ff14, emissive: 0x39ff14, emissiveIntensity: 1 })
     );
-    this.antennaTip2.position.set(-0.2, 0.48, 0);
+    this.antennaTip2.position.set(-0.17, 0.445, 0);
     this.group.add(this.antennaTip2);
 
     // Rivets/bolts
@@ -1966,11 +1966,30 @@ class RobotCharacter extends CharacterBase {
 
   updateSpeaking(time, delta, amplitude) {
     super.updateSpeaking(time, delta, amplitude);
-    // LED mouth — animate each LED based on amplitude and position
+    // LED mouth — each LED responds independently to amplitude with position-based patterns
     this.ledMouth.forEach((led, i) => {
       const row = Math.floor(i / 4), col = i % 4;
-      const wave = Math.sin(time * 18 + col * 1.5 + row * 2);
-      led.material.emissiveIntensity = amplitude > 0.15 ? (wave * 0.4 + 0.6) * amplitude : 0.05;
+      // Center columns (1,2) are most active, edges (0,3) need more amplitude
+      const colCenter = 1 - Math.abs(col - 1.5) / 1.5; // 0.33 at edges, 1.0 at center
+      // Top row most active, bottom row needs high amplitude
+      const rowWeight = 1 - row * 0.3; // 1.0, 0.7, 0.4
+      // Multiple overlapping waves for organic movement
+      const wave1 = Math.sin(time * 18 + col * 1.5 + row * 2);
+      const wave2 = Math.sin(time * 12 + col * 2.5 - row * 1.8);
+      const wave3 = Math.sin(time * 25 + i * 0.9); // per-LED shimmer
+      const combined = wave1 * 0.4 + wave2 * 0.3 + wave3 * 0.3;
+      const threshold = 0.1 + (1 - colCenter) * 0.15 + (1 - rowWeight) * 0.2;
+      if (amplitude > threshold) {
+        const intensity = (combined * 0.4 + 0.6) * amplitude * (colCenter * 0.5 + 0.5) * (rowWeight * 0.5 + 0.5);
+        led.material.emissiveIntensity = Math.max(0.08, intensity);
+        // Scale LEDs for "opening mouth" effect — top row widens, bottom row shrinks
+        const yScale = row === 0 ? 1 + amplitude * 0.4 : row === 2 ? 1 - amplitude * 0.2 : 1 + amplitude * 0.15;
+        led.scale.y = yScale;
+        led.scale.x = 1 + combined * amplitude * 0.15;
+      } else {
+        led.material.emissiveIntensity = 0.05;
+        led.scale.set(1, 1, 1);
+      }
     });
     // Signal rings pulse outward from antenna when speaking
     if (this.signalRings) {
@@ -1988,6 +2007,7 @@ class RobotCharacter extends CharacterBase {
       });
     }
     this.antennaTip.material.emissiveIntensity = 0.5 + Math.sin(time * 8) * 0.5;
+    this.antennaTip2.material.emissiveIntensity = 0.5 + Math.sin(time * 6 + 1.5) * 0.5;
   }
 }
 
