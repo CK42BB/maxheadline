@@ -755,6 +755,25 @@ function scheduleNextRefresh() {
   console.log(`Next refresh at ${next.toISOString()} (${delayHrs}h / ${delayMin} min from now)`);
 
   setTimeout(async () => {
+    // Skip if any mode was refreshed within the last 6 hours (avoids wasting credits)
+    let recentRefresh = false;
+    for (const m of ['everything', 'uponly', 'sota']) {
+      const c = await loadCache(m);
+      if (c && c.fetchedAt) {
+        const age = Date.now() - new Date(c.fetchedAt).getTime();
+        if (age < 6 * 3600000) {
+          console.log(`[Schedule] Skipping refresh — ${m} was fetched ${(age/3600000).toFixed(1)}h ago (< 6h)`);
+          recentRefresh = true;
+          break;
+        }
+      }
+    }
+    if (recentRefresh) {
+      console.log('[Schedule] Rescheduling for tomorrow 6pm ET');
+      scheduleNextRefresh();
+      return;
+    }
+
     console.log(`=== Scheduled 6pm ET refresh firing at ${new Date().toISOString()} ===`);
     for (const mode of ['everything', 'uponly', 'sota']) {
       await refreshNews(mode);
