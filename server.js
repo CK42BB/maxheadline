@@ -341,13 +341,13 @@ async function fetchNewsFromAPI(mode, characterName = 'Ribbitz') {
   const searchInstructions = {
     everything: `Find today's top 8 global news stories across politics, technology, science, culture, environment, and world events. Diverse mix.`,
     uponly: `Find today's 8 most positive, hopeful, uplifting global news stories — scientific breakthroughs, environmental wins, medical advances, acts of kindness, progress on hard problems, good policy outcomes. Genuinely good news only.`,
-    thisisfine: `Find today's 8 most alarming, dystopian, or absurd news stories — climate disasters, corporate malfeasance, political chaos, inequality milestones, AI concerns, societal decline indicators. The kind that make you say "this is fine" while everything burns.`
+    sota: `Find today's 8 most significant state-of-the-art breakthroughs in AI, robotics, future tech, biotech, quantum computing, space tech, and frontier science. Focus on actual technical achievements, new model releases, research papers, product launches, and engineering milestones — not opinion pieces. Real advances only.`
   };
 
   const toneInstructions = {
     everything: `Classic Max Headroom — witty, sardonic, rapid-fire, slightly glitchy in delivery. Mix of genuine insight with cutting humor.`,
     uponly: `Enthusiastically optimistic, almost suspiciously positive. Genuinely excited about good news but with a wink — you know the world is complicated but right now we're celebrating. Peppy, warm, encouraging.`,
-    thisisfine: `Dark gallows humor. Deadpan delivery of horrifying facts. Sardonic, occasionally breaking into manic laughter. Channel the "this is fine" dog energy. Find the absurd comedy in civilizational decline.`
+    sota: `Excited tech enthusiast energy. You're genuinely thrilled by what humans are building. Speak like the smartest engineer at the conference who just saw the future demo — precise technical language, infectious excitement, specific details that matter. Not hype — substance.`
   };
 
   const response = await fetch('https://api.anthropic.com/v1/messages', {
@@ -721,7 +721,7 @@ function scheduleNextRefresh() {
 
   setTimeout(async () => {
     // Refresh all three modes
-    for (const mode of ['everything', 'uponly', 'thisisfine']) {
+    for (const mode of ['everything', 'uponly', 'sota']) {
       await refreshNews(mode);
     }
     scheduleNextRefresh();
@@ -801,7 +801,7 @@ app.get('/api/audio/:characterId/:storyId/:energy', async (req, res) => {
   let storyData = null;
   const baseId = storyId.replace(/-headline$|-summary$/, '');
   const isHeadline = storyId.endsWith('-headline');
-  for (const mode of ['everything', 'uponly', 'thisisfine']) {
+  for (const mode of ['everything', 'uponly', 'sota']) {
     const cache = await loadCache(mode);
     if (!cache) continue;
     const found = cache.stories.find(s => s.id === baseId);
@@ -1211,7 +1211,7 @@ app.listen(PORT, async () => {
   await initDB();
 
   // Backfill addedAt on old stories that don't have it, then prune expired (>48h)
-  for (const mode of ['everything', 'uponly', 'thisisfine']) {
+  for (const mode of ['everything', 'uponly', 'sota']) {
     const cache = await loadCache(mode);
     if (cache && cache.stories) {
       // Backfill addedAt using the cache-level fetchedAt for legacy stories
@@ -1254,7 +1254,7 @@ app.listen(PORT, async () => {
 
   // Check if we have cached stories; if not, do an initial fetch
   let hasCache = false;
-  for (const m of ['everything', 'uponly', 'thisisfine']) {
+  for (const m of ['everything', 'uponly', 'sota']) {
     const c = await loadCache(m);
     if (c && c.stories && c.stories.length > 0) { hasCache = true; break; }
   }

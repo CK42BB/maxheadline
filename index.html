@@ -93,7 +93,7 @@ body {
   background: rgba(57,255,20,0.1);
   box-shadow: 0 0 15px rgba(57,255,20,0.2);
 }
-.mode-btn.active[data-mode="thisisfine"] {
+.mode-btn.active[data-mode="sota"] {
   border-color: var(--neon-orange); color: var(--neon-orange);
   background: rgba(255,107,43,0.1);
   box-shadow: 0 0 15px rgba(255,107,43,0.2);
@@ -656,7 +656,7 @@ body.ui-hidden #char-name {
       <div id="mode-bar">
         <button class="mode-btn active" data-mode="everything"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg> Everything</button>
         <button class="mode-btn" data-mode="uponly"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="1"><polygon points="12,2 22,22 2,22"/></svg> Up Only</button>
-        <button class="mode-btn" data-mode="thisisfine"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="1"><polygon points="2,2 22,2 12,22"/></svg> Not Great</button>
+        <button class="mode-btn" data-mode="sota"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg> SOTA</button>
       </div>
     </div>
     <div id="story-feed"></div>
@@ -726,10 +726,10 @@ const MODE_BACKGROUNDS = {
     skyTop: new THREE.Color(0x002a15), skyMid: new THREE.Color(0x2a9e5a), skyBot: new THREE.Color(0xffbb44),
     propColors: [0x39ff14, 0xffff00, 0x00f0ff, 0xff9d2d]
   },
-  thisisfine: {
-    gridColor1: 0xff6b2b, gridColor2: 0x8a1a1a,
-    skyTop: new THREE.Color(0x150000), skyMid: new THREE.Color(0x8e2a2a), skyBot: new THREE.Color(0xff4444),
-    propColors: [0xff6b2b, 0xff2d2d, 0xb829dd, 0xff2d95]
+  sota: {
+    gridColor1: 0x00f0ff, gridColor2: 0x0066aa,
+    skyTop: new THREE.Color(0x000a1a), skyMid: new THREE.Color(0x003366), skyBot: new THREE.Color(0x00ccff),
+    propColors: [0x00f0ff, 0x39ff14, 0xb829dd, 0x00aaff]
   }
 };
 
@@ -883,7 +883,7 @@ const LENS_REFLECTION = {
     this.transitionStart = performance.now() / 1000;
   },
 
-  forceFlames: false, // set true in "Not Great" mode
+  forceFlames: false, // set true in "SOTA" mode
 
   update(time) {
     if (!this.canvas) return;
@@ -1056,7 +1056,7 @@ const LENS_REFLECTION = {
     }
   },
 
-  // Flames — procedural fire for "Not Great" mode
+  // Flames — procedural fire for "SOTA" mode
   _drawFlames(data, w, h, time) {
     // Simple fire: noise-based rising heat
     const speed = time * 3;
@@ -3270,15 +3270,15 @@ class NewsEngine {
         'Medical Breakthrough Gives Millions Hope',
         'Two Countries Resolve Dispute Through Dialogue'
       ],
-      thisisfine: [
-        'Everything Is Definitely Fine Says Official Report',
-        'Record Heat Wave Breaks Previous Record Heat Wave',
-        'AI Now Better at Your Job Than You Are',
-        'Billionaire Launches Vanity Project as World Burns',
-        'Glacier Named "Eternal" Turns Out Not to Be',
-        'Housing Prices Achieve Final Form',
-        'Democracy Index Takes Another Interesting Turn',
-        'Ocean Levels Rise Exactly as Predicted Decades Ago'
+      sota: [
+        'New Foundation Model Shatters Every Benchmark',
+        'Humanoid Robot Learns to Cook From YouTube Videos',
+        'Quantum Computer Solves Problem in Seconds That Would Take Millennia',
+        'Brain-Computer Interface Restores Full Speech to Paralyzed Patient',
+        'Fusion Reactor Achieves Net Energy Gain for First Time',
+        'AI Agent Autonomously Discovers New Antibiotic Compound',
+        'Self-Driving Fleet Completes One Billion Miles Zero Incidents',
+        'SpaceX Starship Successfully Lands on Mars Surface'
       ]
     };
     return (headlines[mode] || headlines.everything).map((h, i) => ({
@@ -4639,15 +4639,15 @@ class MaxHeadlineApp {
 
     // Neon ring color per mode
     if (this.neonRing) {
-      const ringColors = { everything: 0xff2d95, uponly: 0x39ff14, thisisfine: 0xff6b2b };
+      const ringColors = { everything: 0xff2d95, uponly: 0x39ff14, sota: 0x00f0ff };
       this.neonRing.material.color.setHex(ringColors[mode] || 0xff2d95);
     }
 
-    // Flames in sunglasses for "Not Great" mode
-    LENS_REFLECTION.forceFlames = (mode === 'thisisfine');
+    // Flames in sunglasses for "SOTA" mode
+    LENS_REFLECTION.forceFlames = (mode === 'sota');
 
     // Mode-specific adjustments
-    if (mode === 'thisisfine') {
+    if (mode === 'sota') {
       this.modeGlitchMult = 1.8;
       this.crtPass.uniforms.uFlickerIntensity.value = 0.05;
       this.crtPass.uniforms.uChromaShift.value = 0.004;
@@ -5152,8 +5152,8 @@ class MaxHeadlineApp {
       }
     }
 
-    // "Not Great" mode — occasional deliberate glitch
-    if (this.currentMode === 'thisisfine' && this.currentCharacter && !this.speech.isSpeaking) {
+    // "SOTA" mode — occasional deliberate glitch
+    if (this.currentMode === 'sota' && this.currentCharacter && !this.speech.isSpeaking) {
       if (Math.random() < 0.001) {
         this.currentCharacter.triggerGlitch();
       }
