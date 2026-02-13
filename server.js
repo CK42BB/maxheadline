@@ -1176,12 +1176,20 @@ app.post('/api/regen-tts', async (req, res) => {
 });
 
 // POST /api/refresh — manual trigger to refresh news
+// Pass mode="all" to refresh all three modes sequentially
 app.post('/api/refresh', async (req, res) => {
   const { mode = 'everything' } = req.body;
   if (isRefreshing) return res.json({ status: 'already refreshing' });
 
-  res.json({ status: 'refresh started' });
-  refreshNews(mode);
+  if (mode === 'all') {
+    res.json({ status: 'refresh started for all modes' });
+    for (const m of ['everything', 'uponly', 'sota']) {
+      await refreshNews(m);
+    }
+  } else {
+    res.json({ status: 'refresh started' });
+    refreshNews(mode);
+  }
 });
 
 // GET /api/memes — list available meme images
