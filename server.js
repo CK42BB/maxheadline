@@ -441,7 +441,8 @@ function isGenericImage(url) {
     'placeholder', 'og-image', 'site-image', 'brand', 'avatar',
     '/static/assets/images/', '_default.', 'noimage', 'generic',
     'facebook-default', // NPR default share image
-    'dims.apnews.com/dims4/default/' // AP News generic placeholder
+    'dims.apnews.com/dims4/default/', // AP News generic placeholder
+    'simorgh-assets/public/news/images/metadata/' // BBC generic poster
   ];
   if (genericPatterns.some(p => lower.includes(p))) return true;
   // Skip tiny images (likely icons) based on URL hints
