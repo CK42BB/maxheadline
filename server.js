@@ -542,18 +542,23 @@ async function audioExistsInDB(filename) {
 // =====================================================================
 // TTS GENERATION
 // =====================================================================
-async function generateTTSForStory(characterId, storyId, text, voiceId, energy, voiceSettings) {
+async function generateTTSForStory(characterId, storyId, text, voiceId, energy, voiceSettings, force = false) {
   const filename = `${characterId}-${storyId}-${energy}.mp3`;
   const filepath = path.join(AUDIO_DIR, filename);
 
-  // Skip if already on filesystem
-  if (fs.existsSync(filepath)) return filename;
+  if (!force) {
+    // Skip if already on filesystem
+    if (fs.existsSync(filepath)) return filename;
 
-  // Skip if already in Postgres — restore to filesystem
-  const dbAudio = await loadAudioFromDB(filename);
-  if (dbAudio) {
-    console.log(`  Restored from DB: ${filename} (${(dbAudio.length / 1024).toFixed(0)}KB)`);
-    return filename;
+    // Skip if already in Postgres — restore to filesystem
+    const dbAudio = await loadAudioFromDB(filename);
+    if (dbAudio) {
+      console.log(`  Restored from DB: ${filename} (${(dbAudio.length / 1024).toFixed(0)}KB)`);
+      return filename;
+    }
+  } else {
+    // Force mode: delete existing file so new one replaces it
+    try { fs.unlinkSync(filepath); } catch {}
   }
 
   if (!process.env.ELEVENLABS_API_KEY || process.env.ELEVENLABS_API_KEY === 'your-elevenlabs-key-here') {
@@ -624,7 +629,7 @@ async function generateAllTTS(stories, characterId = 'frog') {
 // Called when a user first selects a non-default character
 const _generatingCharacters = new Set();
 
-async function generateCharacterTTS(characterId, mode) {
+async function generateCharacterTTS(characterId, mode, force = false) {
   const key = `${characterId}-${mode}`;
   if (_generatingCharacters.has(key)) return; // already in progress
   _generatingCharacters.add(key);
@@ -635,18 +640,18 @@ async function generateCharacterTTS(characterId, mode) {
   const cache = await loadCache(mode);
   if (!cache || !cache.stories) { _generatingCharacters.delete(key); return; }
 
-  console.log(`On-demand TTS: generating ${characterId} for ${mode}...`);
+  console.log(`On-demand TTS: generating ${characterId} for ${mode}${force ? ' (FORCE)' : ''}...`);
   for (const story of cache.stories) {
     await generateTTSForStory(
       characterId, `${story.id}-headline`, story.headline, voice.voiceId,
-      'highkey', VOICE_ENERGY_SETTINGS['highkey-headline']
+      'highkey', VOICE_ENERGY_SETTINGS['highkey-headline'], force
     );
     await new Promise(r => setTimeout(r, 200));
 
     const summaryText = story.summaryHighkey || story.summary;
     await generateTTSForStory(
       characterId, `${story.id}-summary`, summaryText, voice.voiceId,
-      'highkey', VOICE_ENERGY_SETTINGS['highkey-summary']
+      'highkey', VOICE_ENERGY_SETTINGS['highkey-summary'], force
     );
     await new Promise(r => setTimeout(r, 200));
   }
@@ -869,28 +874,29 @@ app.get('/api/audio/:characterId/:storyId/:energy', async (req, res) => {
 // POST /api/prepare-character — kick off on-demand TTS generation for a character
 // Returns immediately; generation happens in background
 app.post('/api/prepare-character', async (req, res) => {
-  const { characterId, mode = 'everything' } = req.body;
+  const { characterId, mode = 'everything', force = false } = req.body;
   if (!CHARACTER_VOICES[characterId]) return res.status(400).json({ error: 'Unknown character' });
-  if (characterId === 'frog') return res.json({ status: 'ready', preGenerated: true });
+  if (characterId === 'frog' && !force) return res.json({ status: 'ready', preGenerated: true });
 
-  // Check if all clips exist already
+  // Check if all clips exist already (skip check when force=true for voice swaps)
   const cache = await loadCache(mode);
   if (!cache || !cache.stories) return res.json({ status: 'no_stories' });
 
-  let allReady = true;
-  for (const story of cache.stories) {
-    const hFile = `${characterId}-${story.id}-headline-highkey.mp3`;
-    const sFile = `${characterId}-${story.id}-summary-highkey.mp3`;
-    const hExists = fs.existsSync(path.join(AUDIO_DIR, hFile)) || await audioExistsInDB(hFile);
-    const sExists = fs.existsSync(path.join(AUDIO_DIR, sFile)) || await audioExistsInDB(sFile);
-    if (!hExists || !sExists) { allReady = false; break; }
+  if (!force) {
+    let allReady = true;
+    for (const story of cache.stories) {
+      const hFile = `${characterId}-${story.id}-headline-highkey.mp3`;
+      const sFile = `${characterId}-${story.id}-summary-highkey.mp3`;
+      const hExists = fs.existsSync(path.join(AUDIO_DIR, hFile)) || await audioExistsInDB(hFile);
+      const sExists = fs.existsSync(path.join(AUDIO_DIR, sFile)) || await audioExistsInDB(sFile);
+      if (!hExists || !sExists) { allReady = false; break; }
+    }
+    if (allReady) return res.json({ status: 'ready', preGenerated: true });
   }
 
-  if (allReady) return res.json({ status: 'ready', preGenerated: true });
-
   // Kick off generation in background
-  generateCharacterTTS(characterId, mode).catch(e => console.error('Char TTS error:', e));
-  res.json({ status: 'generating', characterId, mode });
+  generateCharacterTTS(characterId, mode, force).catch(e => console.error('Char TTS error:', e));
+  res.json({ status: 'generating', characterId, mode, force });
 });
 
 // GET /api/character-status — check if a character's audio is ready
