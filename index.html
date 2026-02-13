@@ -458,10 +458,10 @@ body {
 /* Viewport Controls */
 #viewport-controls {
   position: absolute;
-  bottom: 32px; left: 0; right: 0;
+  bottom: 40px; left: 0; right: 0;
   padding: 14px 16px;
   background: linear-gradient(transparent, rgba(10,10,26,0.95));
-  z-index: 11;
+  z-index: 110;
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -2760,6 +2760,45 @@ class SpeechManager {
     this.characterId = 'frog';
     this._animFrame = null;
     this._abortController = null;
+    this._audioEl = null;      // HTML5 Audio element (reliable on mobile)
+    this._useAudioEl = false;   // set true after unlockAudio
+    this._analyserConnected = false;
+  }
+
+  // Convert AudioBuffer → WAV ArrayBuffer for HTML5 Audio playback
+  _audioBufferToWav(buffer) {
+    const numCh = buffer.numberOfChannels;
+    const sr = buffer.sampleRate;
+    const len = buffer.length;
+    const bytesPerSample = 2; // 16-bit
+    const dataLen = len * numCh * bytesPerSample;
+    const headerLen = 44;
+    const wav = new ArrayBuffer(headerLen + dataLen);
+    const view = new DataView(wav);
+    const writeStr = (offset, str) => { for (let i = 0; i < str.length; i++) view.setUint8(offset + i, str.charCodeAt(i)); };
+    writeStr(0, 'RIFF');
+    view.setUint32(4, 36 + dataLen, true);
+    writeStr(8, 'WAVE');
+    writeStr(12, 'fmt ');
+    view.setUint32(16, 16, true);
+    view.setUint16(20, 1, true); // PCM
+    view.setUint16(22, numCh, true);
+    view.setUint32(24, sr, true);
+    view.setUint32(28, sr * numCh * bytesPerSample, true);
+    view.setUint16(32, numCh * bytesPerSample, true);
+    view.setUint16(34, 16, true);
+    writeStr(36, 'data');
+    view.setUint32(40, dataLen, true);
+    // Interleave channels
+    let offset = 44;
+    for (let i = 0; i < len; i++) {
+      for (let ch = 0; ch < numCh; ch++) {
+        const sample = Math.max(-1, Math.min(1, buffer.getChannelData(ch)[i]));
+        view.setInt16(offset, sample < 0 ? sample * 0x8000 : sample * 0x7FFF, true);
+        offset += 2;
+      }
+    }
+    return wav;
   }
 
   // Join two AudioBuffers into one continuous buffer with a small gap
@@ -2820,32 +2859,75 @@ class SpeechManager {
     }
   }
 
-  // Unlock audio on iOS — must be called inside a user gesture
+  // Unlock audio on mobile — must be called inside a user gesture
   async unlockAudio() {
+    // 1. Create persistent HTML5 Audio element (most reliable on mobile)
+    if (!this._audioEl) {
+      this._audioEl = new Audio();
+      this._audioEl.setAttribute('playsinline', '');
+      this._audioEl.setAttribute('webkit-playsinline', '');
+    }
+    // Play silent WAV to unlock the audio element on iOS/Android
+    this._audioEl.src = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA=';
+    try { await this._audioEl.play(); } catch(e) { console.warn('[Audio] Silent play failed:', e); }
+    this._useAudioEl = true;
+
+    // 2. Also set up AudioContext for analyser (best-effort for mouth animation)
     await this._ensureAudioContext();
-    // iOS requires a tiny buffer to be played during a gesture to unlock audio
-    const buf = this.audioContext.createBuffer(1, 1, this.audioContext.sampleRate);
-    const src = this.audioContext.createBufferSource();
-    src.buffer = buf;
-    src.connect(this.audioContext.destination);
-    src.start(0);
+    // Try to connect audio element to analyser via captureStream (non-destructive)
+    if (!this._analyserConnected && this._audioEl.captureStream) {
+      try {
+        const stream = this._audioEl.captureStream();
+        const source = this.audioContext.createMediaStreamSource(stream);
+        source.connect(this.analyser);
+        // Don't connect analyser to destination — audio element handles output directly
+        this._analyserConnected = true;
+        console.log('[Audio] Analyser connected via captureStream');
+      } catch(e) {
+        console.warn('[Audio] captureStream failed, using synthetic amplitude:', e);
+      }
+    }
+
+    // 3. Also play silent buffer via AudioContext as backup unlock
+    try {
+      const buf = this.audioContext.createBuffer(1, 1, this.audioContext.sampleRate);
+      const src = this.audioContext.createBufferSource();
+      src.buffer = buf;
+      src.connect(this.audioContext.destination);
+      src.start(0);
+    } catch(e) {}
   }
 
   _startAmplitudeTracking() {
-    const dataArray = new Uint8Array(this.analyser.frequencyBinCount);
-    const track = () => {
-      if (!this.isSpeaking) return;
-      this.analyser.getByteFrequencyData(dataArray);
-      // Calculate RMS amplitude from frequency data
-      let sum = 0;
-      for (let i = 0; i < dataArray.length; i++) sum += dataArray[i] * dataArray[i];
-      const rms = Math.sqrt(sum / dataArray.length) / 255;
-      // Amplify and clamp for mouth animation
-      const amplitude = Math.min(1, rms * 3);
-      this.onAmplitude(amplitude);
-      this._animFrame = requestAnimationFrame(track);
-    };
-    track();
+    // If analyser is connected (captureStream worked or using BufferSource), use real data
+    if (this.analyser && (this._analyserConnected || this.currentSource)) {
+      const dataArray = new Uint8Array(this.analyser.frequencyBinCount);
+      const track = () => {
+        if (!this.isSpeaking) return;
+        this.analyser.getByteFrequencyData(dataArray);
+        let sum = 0;
+        for (let i = 0; i < dataArray.length; i++) sum += dataArray[i] * dataArray[i];
+        const rms = Math.sqrt(sum / dataArray.length) / 255;
+        const amplitude = Math.min(1, rms * 3);
+        this.onAmplitude(amplitude);
+        this._animFrame = requestAnimationFrame(track);
+      };
+      track();
+    } else {
+      // Synthetic amplitude for mobile when analyser isn't connected
+      let t = 0;
+      const track = () => {
+        if (!this.isSpeaking) return;
+        t += 0.15;
+        // Natural speech-like rhythm: fast oscillation modulated by slower envelope
+        const amplitude = Math.min(1, Math.max(0,
+          0.3 + 0.4 * Math.sin(t * 2.7) * Math.sin(t * 0.8) + 0.2 * Math.random()
+        ));
+        this.onAmplitude(amplitude);
+        this._animFrame = requestAnimationFrame(track);
+      };
+      track();
+    }
   }
 
   // Fetch + decode audio without playing — returns trimmed AudioBuffer or null
@@ -2879,6 +2961,43 @@ class SpeechManager {
     if (!buffer) return;
     await this._ensureAudioContext();
 
+    // Use HTML5 Audio element (reliable on mobile + desktop)
+    if (this._useAudioEl && this._audioEl) {
+      const wav = this._audioBufferToWav(buffer);
+      const blob = new Blob([wav], { type: 'audio/wav' });
+      const url = URL.createObjectURL(blob);
+
+      this._audioEl.src = url;
+      this.isSpeaking = true;
+      this._startAmplitudeTracking();
+
+      return new Promise(resolve => {
+        this._playingResolve = resolve;
+        const done = () => {
+          this._playingResolve = null;
+          this.isSpeaking = false;
+          this.onAmplitude(0);
+          if (this._animFrame) cancelAnimationFrame(this._animFrame);
+          URL.revokeObjectURL(url);
+          resolve(true);
+        };
+        this._audioEl.onended = done;
+        this._audioEl.onerror = done;
+        this._audioEl.play().catch(() => {
+          console.warn('[Audio] HTML5 play failed, trying BufferSource fallback');
+          this.isSpeaking = false;
+          URL.revokeObjectURL(url);
+          this._playViaBufferSource(buffer, emotion).then(resolve);
+        });
+      });
+    }
+
+    // Fallback: AudioContext BufferSource (desktop, or if audio element not initialized)
+    return this._playViaBufferSource(buffer, emotion);
+  }
+
+  // Original BufferSource playback (works great on desktop)
+  _playViaBufferSource(buffer, emotion = 'deadpan') {
     const source = this.audioContext.createBufferSource();
     source.buffer = buffer;
     const gainNode = this.audioContext.createGain();
@@ -2889,12 +3008,11 @@ class SpeechManager {
     {
       let glitchTimer;
       const scheduleGlitch = () => {
-        const delay = 4000 + Math.random() * 6000; // less frequent — every 4-10s
+        const delay = 4000 + Math.random() * 6000;
         glitchTimer = setTimeout(() => {
           if (!this.isSpeaking) return;
-          // Smooth volume swell — like leaning in to emphasize a point
           const orig = gainNode.gain.value;
-          const target = 1.2 + Math.random() * 0.2; // 1.2-1.4x
+          const target = 1.2 + Math.random() * 0.2;
           const steps = 8;
           let step = 0;
           const ramp = setInterval(() => {
@@ -2919,7 +3037,6 @@ class SpeechManager {
     this._startAmplitudeTracking();
 
     return new Promise(resolve => {
-      // Store resolve so stop() can immediately resolve this promise
       this._playingResolve = resolve;
       const done = () => {
         this._playingResolve = null;
@@ -3007,63 +3124,8 @@ class SpeechManager {
       const audioBuffer = await this.audioContext.decodeAudioData(arrayBuffer);
       const trimmedBuffer = this._trimTrailingSilence(audioBuffer);
 
-      return new Promise((resolve) => {
-        // Create buffer source → gain → analyser → destination
-        const source = this.audioContext.createBufferSource();
-        source.buffer = trimmedBuffer;
-
-        // Audio glitch chain for highkey mode
-        const gainNode = this.audioContext.createGain();
-        source.connect(gainNode);
-        gainNode.connect(this.analyser);
-
-        // Smooth, intentional audio emphasis — never jittery
-        let glitchTimer = null;
-        const scheduleGlitch = () => {
-          const delay = 4000 + Math.random() * 6000;
-          glitchTimer = setTimeout(() => {
-            if (!this.isSpeaking) return;
-            const orig = gainNode.gain.value;
-            const target = 1.2 + Math.random() * 0.2;
-            const steps = 8;
-            let step = 0;
-            const ramp = setInterval(() => {
-              step++;
-              if (step <= steps / 2) {
-                gainNode.gain.value = orig + (target - orig) * (step / (steps / 2));
-              } else {
-                gainNode.gain.value = target - (target - orig) * ((step - steps / 2) / (steps / 2));
-              }
-              if (step >= steps) { clearInterval(ramp); gainNode.gain.value = orig; }
-            }, 40);
-            scheduleGlitch();
-          }, delay);
-        };
-        scheduleGlitch();
-        source._glitchTimer = glitchTimer;
-
-        this.currentSource = source;
-        this.currentGain = gainNode;
-        this.isSpeaking = true;
-
-        this._startAmplitudeTracking();
-
-        const cleanup = () => {
-          this.isSpeaking = false;
-          this.onAmplitude(0);
-          this.currentSource = null;
-          if (this._animFrame) cancelAnimationFrame(this._animFrame);
-          if (source._glitchTimer) clearTimeout(source._glitchTimer);
-          if (this._durationTimer) clearTimeout(this._durationTimer);
-        };
-        const durationMs = trimmedBuffer.duration * 1000;
-        source.start(0);
-        this._durationTimer = setTimeout(() => { cleanup(); resolve(); }, durationMs);
-        source.onended = () => {
-          if (this._durationTimer) clearTimeout(this._durationTimer);
-          cleanup(); resolve();
-        };
-      });
+      // Use the unified playBuffer (handles mobile audio element + desktop BufferSource)
+      return this.playBuffer(trimmedBuffer, emotion);
     } catch (err) {
       // Don't fallback to Web Speech if request was intentionally aborted
       if (err.name === 'AbortError') return;
@@ -3100,6 +3162,13 @@ class SpeechManager {
     // Abort any in-flight audio fetches (fetchAudio)
     if (this._fetchAbort) { this._fetchAbort.abort(); this._fetchAbort = null; }
     if (this._durationTimer) { clearTimeout(this._durationTimer); this._durationTimer = null; }
+    // Stop HTML5 Audio element
+    if (this._audioEl) {
+      this._audioEl.pause();
+      this._audioEl.onended = null;
+      this._audioEl.onerror = null;
+    }
+    // Stop BufferSource
     if (this.currentSource) {
       if (this.currentSource._glitchTimer) clearTimeout(this.currentSource._glitchTimer);
       try { this.currentSource.disconnect(); } catch(e) {}
