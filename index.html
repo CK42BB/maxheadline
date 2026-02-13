@@ -3231,16 +3231,17 @@ class FinancialTicker {
   constructor(scene) {
     this.scene = scene;
     this.tickerData = [];
-    this.scrollOffset = 0;
+    this._scrollPx = 0;
+    this._contentWidth = 0;
+    this._items = [];
 
-    // Canvas for ticker texture
+    // Canvas for ticker texture — fixed size, redrawn each frame
     this.canvas = document.createElement('canvas');
-    this.canvas.width = 4096;
+    this.canvas.width = 2048;
     this.canvas.height = 64;
     this.ctx = this.canvas.getContext('2d');
 
     this.texture = new THREE.CanvasTexture(this.canvas);
-    this.texture.wrapS = THREE.RepeatWrapping;
     this.texture.minFilter = THREE.LinearFilter;
 
     // Create ticker stripe — behind character (z=-0.4), in front of hero photo (z=-0.6)
@@ -3275,9 +3276,29 @@ class FinancialTicker {
     } catch {}
   }
 
+  // Pre-measure item widths when data changes
+  _measureItems() {
+    if (this.tickerData.length === 0) { this._contentWidth = 0; this._items = []; return; }
+    const ctx = this.ctx;
+    ctx.font = 'bold 28px monospace';
+    let total = 0;
+    this._items = this.tickerData.map(item => {
+      const priceStr = item.price >= 1000 ? item.price.toLocaleString('en-US', { maximumFractionDigits: 0 })
+        : item.price >= 1 ? item.price.toFixed(2) : item.price.toFixed(4);
+      const changeStr = (item.up ? '+' : '') + item.change.toFixed(2) + '%';
+      const symW = ctx.measureText(item.symbol).width;
+      const priceW = ctx.measureText(priceStr).width;
+      const changeW = ctx.measureText(changeStr).width;
+      const w = symW + 8 + priceW + 8 + changeW + 40;
+      total += w;
+      return { symbol: item.symbol, priceStr, changeStr, up: item.up, symW, priceW, changeW, totalW: w };
+    });
+    this._contentWidth = total;
+  }
+
   renderTexture() {
     const ctx = this.ctx;
-    const W = this.canvas.width; // fixed 2048, never resize (GPU compat)
+    const W = this.canvas.width;
     const H = this.canvas.height;
 
     ctx.clearRect(0, 0, W, H);
@@ -3302,42 +3323,60 @@ class FinancialTicker {
       return;
     }
 
-    // Draw ticker items, tiling to fill the full canvas width
-    let x = 0;
-    let firstPassDone = false;
+    this._measureItems();
+    this._drawFrame(0); // initial static frame
+  }
+
+  // Draw visible items at current scroll offset
+  _drawFrame(scrollPx) {
+    const ctx = this.ctx;
+    const W = this.canvas.width;
+    const H = this.canvas.height;
+    const cw = this._contentWidth;
+    if (!cw || !this._items) return;
+
+    ctx.clearRect(0, 0, W, H);
+    ctx.fillStyle = '#0c0820';
+    ctx.fillRect(0, 0, W, H);
+    ctx.fillStyle = '#00f0ff';
+    ctx.fillRect(0, 0, W, 2);
+    ctx.fillStyle = '#ff2d95';
+    ctx.fillRect(0, H - 2, W, 2);
+
+    ctx.font = 'bold 28px monospace';
+    ctx.textBaseline = 'middle';
+
+    // Start drawing from negative offset so items scroll left
+    let x = -(scrollPx % cw);
+    // Draw enough passes to fill the canvas
     while (x < W) {
-      for (const item of this.tickerData) {
-        // Symbol
+      for (const it of this._items) {
+        // Skip items entirely off-screen left
+        if (x + it.totalW < 0) { x += it.totalW; continue; }
+        // Stop if past right edge
+        if (x > W) return;
+
         ctx.fillStyle = '#a0a8c0';
-        ctx.fillText(item.symbol, x, H / 2);
-        x += ctx.measureText(item.symbol).width + 8;
+        ctx.fillText(it.symbol, x, H / 2);
+        x += it.symW + 8;
 
-        // Price
-        const priceStr = item.price >= 1000 ? item.price.toLocaleString('en-US', { maximumFractionDigits: 0 })
-          : item.price >= 1 ? item.price.toFixed(2) : item.price.toFixed(4);
         ctx.fillStyle = '#e0e0e8';
-        ctx.fillText(priceStr, x, H / 2);
-        x += ctx.measureText(priceStr).width + 8;
+        ctx.fillText(it.priceStr, x, H / 2);
+        x += it.priceW + 8;
 
-        // Change
-        const changeStr = (item.up ? '+' : '') + item.change.toFixed(2) + '%';
-        ctx.fillStyle = item.up ? '#39ff14' : '#ff4444';
-        ctx.fillText(changeStr, x, H / 2);
-        x += ctx.measureText(changeStr).width + 40;
+        ctx.fillStyle = it.up ? '#39ff14' : '#ff4444';
+        ctx.fillText(it.changeStr, x, H / 2);
+        x += it.changeW + 40;
       }
-      if (!firstPassDone) { this.totalWidth = x; firstPassDone = true; }
     }
-    this.texture.needsUpdate = true;
   }
 
   update(elapsed) {
-    if (!this.totalWidth) return;
-    // Scroll via texture offset
-    this.scrollOffset += 0.0003;
-    // Wrap at exactly one full set of items for seamless looping
-    const wrapAt = this.totalWidth / this.canvas.width;
-    if (this.scrollOffset > wrapAt) this.scrollOffset -= wrapAt;
-    this.texture.offset.x = this.scrollOffset;
+    if (!this._contentWidth) return;
+    // Pixel-based scroll — redraw visible portion each frame
+    this._scrollPx = (this._scrollPx || 0) + 0.8;
+    this._drawFrame(this._scrollPx);
+    this.texture.needsUpdate = true;
   }
 
   dispose() {
