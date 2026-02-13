@@ -6,7 +6,7 @@ Internal reference doc. Everything that makes this thing tick.
 
 ## Architecture
 
-Single-page app (`index.html`, ~5000 lines) + lightweight Node/Express server (`server.js`, ~840 lines). No build step, no bundler, no framework. ES6 modules loaded via CDN import maps. Deploys on Railway.
+Single-page app (`index.html`, ~5600 lines) + Node/Express server (`server.js`, ~1450 lines). No build step, no bundler, no framework. ES6 modules loaded via CDN import maps. PostgreSQL for persistent storage. Deploys on Railway (auto-deploys from GitHub push to `main`).
 
 ---
 
@@ -42,7 +42,7 @@ A `PMREMGenerator` creates a baked environment map from a custom shader sphere w
 
 ### Mode-Specific Backgrounds
 
-Three complete color palettes swap based on news mode — Everything (pink/cyan/purple vaporwave), Up Only (green/gold/amber warmth), Not Great (red/orange/dark aggressive). Grid, sky gradient, props, fog, and lighting all shift.
+Three complete color palettes swap based on news mode — Everything (pink/cyan/purple vaporwave), Up Only (green/gold/amber warmth), State of the Art (red/orange/dark aggressive). Grid, sky gradient, props, fog, and lighting all shift.
 
 ### Broadcast Lighting Rig
 
@@ -50,7 +50,7 @@ Three complete color palettes swap based on news mode — Everything (pink/cyan/
 
 ---
 
-## Character System — 10 Procedural 3D Characters
+## Character System — 7 Procedural 3D Characters
 
 All characters extend `CharacterBase`, which provides shared animation, emotion response, and lip sync. Each character is built entirely from Three.js primitives with no external assets.
 
@@ -62,12 +62,9 @@ All characters extend `CharacterBase`, which provides shared animation, emotion 
 | 2 | robot | CHROM-E | Real-time CubeCamera chrome, 12-LED mouth grid, signal-ring antennas |
 | 3 | skull | Mortimer | Vertex-colored bone gradient (ivory/darker temples/brow), hinged jaw with teeth rows, glowing red pupils |
 | 4 | fox | Voxel | Tapered snout cone, tall ear cones, squinted eyes |
-| 5 | octopus | Inkwell | 8 tentacles with suction cups, bulbous dome, sinusoidal wave animation |
-| 6 | alien | Zyx-9 | Massive wrap-around eyes (no pupils), antenna orbs that pulse per emotion |
-| 7 | owl | Hootspa | Huge double-ring eyes with twitching pupils, feather ruff torus |
-| 8 | cat | Whiskers | 6 whiskers from single origin point, vertical slit pupils, custom "w"-shaped mouth |
-| 9 | wizard | Glitch | Cone hat with sparkle spheres, tapered beard, rotating crystal orb |
-| 10 | mask | Persona | Split comedy/tragedy sunglasses lenses (blue/red) |
+| 5 | owl | Hootspa | Huge double-ring eyes with twitching pupils, feather ruff torus |
+| 6 | cat | Whiskers | 6 whiskers from single origin point, vertical slit pupils, custom "w"-shaped mouth |
+| 7 | wizard | Glitch | Cone hat with sparkle spheres, tapered beard, rotating crystal orb |
 
 ### Sunglasses System
 
@@ -79,7 +76,7 @@ Every character wears sunglasses — 7 procedural styles (visor, angular, round,
 - **Recursive origami** folding patterns
 - **Julia set fractal** with rotating parameter
 
-In "Not Great" mode, lenses switch to **procedural fire** — multi-octave sin-based noise with a fire color ramp (black, deep red, orange, yellow, white). Lens textures update every 3 frames.
+In "State of the Art" mode, lenses switch to **procedural fire** — multi-octave sin-based noise with a fire color ramp (black, deep red, orange, yellow, white). Lens textures update every 3 frames.
 
 ### Animation System
 
@@ -99,9 +96,9 @@ Each emotion drives: head movement speed, glitch probability, eye scale, voice r
 
 ### ElevenLabs Integration
 
-10 unique voices mapped to characters, using the `eleven_multilingual_v2` model. Two energy modes per voice — **lowkey** (smooth newsreader: higher stability, lower style) and **highkey** (unhinged Max Headroom: low stability, max style). Headline and summary get separate voice configs — headlines are slower and more authoritative.
+7 unique voices mapped to characters, using the `eleven_multilingual_v2` model. Single energy mode — **highkey** (unhinged Max Headroom: low stability, max style). Headline and summary get separate voice configs — headlines are slower and more authoritative.
 
-Server pre-generates all TTS on news refresh: every story x every character x both energy levels x headline + summary = bulk generation with 300ms rate limiting. Cached as MP3 files on disk.
+Server pre-generates TTS for the default character (frog/Ribbitz) on news refresh. Other characters generate on-demand when first selected. Audio cached as MP3 files on disk AND persisted in PostgreSQL (survives Railway deploys). Filesystem is a fast cache layer; Postgres is the durable store.
 
 ### Web Audio API Pipeline
 
@@ -109,9 +106,11 @@ Server pre-generates all TTS on news refresh: every story x every character x bo
 AudioBufferSourceNode → GainNode → AnalyserNode → AudioContext.destination
 ```
 
-**Gapless playback**: Headline and summary audio buffers are fetched in parallel via `Promise.all`, then concatenated into a single `AudioBuffer` with a 0.6s broadcast-style gap using a custom `joinBuffers()` method. No sequential network waterfall, no audible pause.
+**Mobile audio unlock**: On first user gesture, plays a silent WAV via HTML5 Audio element, initializes AudioContext, and plays a silent buffer — triple-unlock strategy for iOS/Android.
 
-**Real-time lip sync**: `AnalyserNode` (FFT 256, smoothing 0.6) extracts frequency data every animation frame. Amplitude maps to character mouth openness with fast attack (18x multiplier) and slow release (8x) for natural-feeling speech animation.
+**Dual playback paths**: Primary path uses HTML5 Audio element (reliable on mobile) with `captureStream()` for analyser connection. Fallback uses AudioContext `BufferSource` (desktop). Both paths support real-time amplitude tracking for lip sync.
+
+**Real-time lip sync**: When `captureStream` connects successfully, uses `AnalyserNode` (FFT 256, smoothing 0.6) for real frequency-based amplitude — mouth closes immediately on speech pauses (2-frame silence snap). Falls back to synthetic amplitude (phrase/pause cycle with syllable-like bursts) when captureStream unavailable.
 
 **Audio glitches**: Smooth volume swells (1.0 → 1.3 → 1.0 over 320ms) at randomized 4-10s intervals. No jarring cuts.
 
@@ -122,8 +121,8 @@ AudioBufferSourceNode → GainNode → AnalyserNode → AudioContext.destination
 ### Fallback Chain
 
 1. Pre-generated character-specific audio from cache
-2. Frog's cached audio (always generated first, used as fallback for other characters)
-3. Live ElevenLabs TTS fetch (parallel headline + summary, joined client-side)
+2. On-demand ElevenLabs generation (server generates + caches permanently)
+3. Live ElevenLabs TTS fetch (parallel headline + summary)
 4. Web Speech API (browser native TTS, last resort)
 
 ---
@@ -136,9 +135,9 @@ Claude `claude-sonnet-4-5-20250929` with the `web_search_20250305` tool (up to 8
 
 - **Everything**: Balanced mix of world news, tech, politics, environment, economy
 - **Up Only**: Positive stories only — breakthroughs, conservation wins, scientific progress
-- **Not Great**: Alarming/dystopian stories with dark humor editorial take
+- **State of the Art**: Frontier tech breakthroughs — AI, robotics, biotech, quantum, space
 
-Returns 8 stories per mode, each with: `id`, `headline`, `summary`, `summaryHighkey` (editorial "Real Story" take), `emotion`, `severity` (1-10), `source`, `sourceUrl`, `imageUrl`, `category`.
+Returns 8 stories per mode, each with: `id`, `headline`, `summary`, `summaryHighkey` (editorial take), `emotion`, `severity` (1-10), `source`, `sourceUrl`, `imageUrl`, `category`.
 
 ### Image Resolution Pipeline
 
@@ -149,15 +148,46 @@ Three-phase approach to get high-quality hero images:
 
 Filters out generic logos, favicons, and placeholder images. Resolves relative URLs to absolute.
 
-### Scheduling
+### Story Lifecycle
 
-Automatic refresh at 6am and 6pm ET daily. On refresh: fetch stories for all 3 modes, resolve images, pre-generate TTS for all characters. Stories cached as JSON on disk.
+- **Scheduling**: Automatic refresh at **6pm ET daily** (once/day to control ElevenLabs costs, captures same-day news)
+- **Merging**: New stories merge on top of existing, deduped by `id`. Each story stamped with `addedAt` timestamp
+- **Public TTL**: Stories visible for 48 hours, retained in DB for 14 days
+- **Startup catch-up**: On deploy/restart, checks each mode — refreshes any that are stale (>20h) or empty
+
+---
+
+## Power Ticker — Anthropic Claude API
+
+Daily "power scores" for 30 public figures, generated via Claude Sonnet with 6 web searches. Each person scored -5 to +5 based on today's news momentum. Displayed as a second scrolling ticker below the financial ticker, scrolling in the opposite direction (right).
+
+- **Schedule**: Generated alongside stories on 6pm ET refresh cycle
+- **Storage**: PostgreSQL `power_ticker` table with JSON file fallback
+- **Endpoint**: `GET /api/power-ticker` — returns cached rankings or static fallback
+- **Display**: `PowerTicker` class — 2048x56 canvas texture, pink top / green bottom borders, CCW tilt (-0.08π), 0.6px/frame scroll right, 10-minute refresh interval
+- **Cost**: ~$0.02-0.05/day (one Sonnet call + 6 web searches)
 
 ---
 
 ## Financial Ticker — Yahoo Finance API
 
-15 symbols tracked: indices (DJI, S&P 500), crypto (BTC, ETH), commodities (Gold, Silver), forex (EUR/USD, GBP/USD), and mega-cap tech (AAPL, NVDA, TSLA, GOOG, META, AMZN, MSFT). 2-minute cache. Displayed as a CNN-style scrolling ticker bar at the bottom of the viewport.
+16 symbols tracked: indices (DJI, S&P 500, VIX), crypto (BTC, ETH), commodities (Gold, Silver), forex (EUR/USD, GBP/USD), and mega-cap tech (AAPL, NVDA, TSLA, GOOG, META, AMZN, MSFT). 2-minute server cache with Yahoo crumb/cookie auth. Static fallback when Yahoo blocks Railway IPs.
+
+Displayed as a CNN-style scrolling `CanvasTexture` ticker — 2048x64 canvas, cyan top / pink bottom borders, CW tilt (+0.08π), 0.8px/frame scroll left. `FinancialTicker` class renders to a `PlaneGeometry` mesh at z=-0.4 (behind character, in front of hero photo).
+
+---
+
+## Persistent Storage — PostgreSQL
+
+Railway PostgreSQL addon with `DATABASE_URL` auto-injected. Three tables:
+
+| Table | Purpose | Key |
+|-------|---------|-----|
+| `story_cache` | News stories per mode (JSONB) | mode TEXT PK |
+| `audio_cache` | TTS MP3 files (BYTEA) | filename TEXT PK |
+| `power_ticker` | Power score rankings (JSONB) | id TEXT PK |
+
+All storage functions are Postgres-first with JSON file fallback (for local dev without DATABASE_URL). Audio files persist across Railway deploys — filesystem is just a fast cache layer restored from Postgres on startup.
 
 ---
 
@@ -169,31 +199,36 @@ Pure CSS, no preprocessor. Vaporwave palette via CSS custom properties. CRT over
 
 ## Server — Node.js + Express
 
-~840 lines. Serves static files, proxies all external API calls (Anthropic, ElevenLabs, Yahoo Finance), handles image CORS proxying, manages file-based caching, and runs the scheduled refresh timer. No database. No ORM. Just `fs` and `fetch`.
+~1450 lines. Serves static files, proxies all external API calls (Anthropic, ElevenLabs, Yahoo Finance), handles image CORS proxying, manages PostgreSQL + file-based caching, generates power rankings, and runs the scheduled refresh timer.
 
 ### Endpoints
 
 | Method | Path | Purpose |
 |--------|------|---------|
-| GET | `/api/stories` | Serve cached stories by mode |
+| GET | `/api/stories` | Serve cached stories by mode (public <48h only) |
 | POST | `/api/news` | Legacy trigger, returns cached or fetches |
-| GET | `/api/audio/:char/:story/:energy` | Stream pre-generated MP3 |
+| GET | `/api/audio/:char/:story/:energy` | Stream pre-generated MP3 (filesystem → Postgres → on-demand) |
 | POST | `/api/tts` | Live TTS fallback |
 | GET | `/api/image-proxy` | CORS proxy for news images |
 | POST | `/api/stats` | Track character play counts |
 | GET | `/api/stats` | View usage analytics |
 | GET | `/api/ticker` | Financial market data |
-| POST | `/api/refresh` | Manual news refresh |
+| GET | `/api/power-ticker` | Power score rankings |
+| POST | `/api/refresh` | Manual news refresh (mode=all for all three) |
+| POST | `/api/refresh-power` | Manual power ticker refresh |
 | POST | `/api/regen-tts` | Regenerate missing audio |
+| POST | `/api/prepare-character` | Kick off on-demand TTS for a character |
+| GET | `/api/character-status/:char/:mode` | Check TTS generation progress |
+| GET | `/api/memes` | List available meme images |
 
 ---
 
 ## Dependencies
 
-**Runtime**: Node.js, Express 4.21, dotenv 16.4. That's it.
+**Runtime**: Node.js, Express 4.21, pg (PostgreSQL client), dotenv 16.4. That's it.
 
 **CDN**: Three.js r172 (core + EffectComposer + RenderPass + ShaderPass), Google Fonts (VT323, Space Mono).
 
-**External Services**: Anthropic Claude API, ElevenLabs TTS API, Yahoo Finance API.
+**External Services**: Anthropic Claude API (news + power rankings), ElevenLabs TTS API, Yahoo Finance API.
 
 **No build tools. No bundler. No TypeScript. No React. No webpack. One HTML file and one server file.**
