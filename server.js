@@ -64,7 +64,14 @@ async function initDB() {
       PRIMARY KEY (mode)
     )
   `);
-  console.log('[DB] PostgreSQL connected, story_cache table ready');
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS audio_cache (
+      filename TEXT PRIMARY KEY,
+      data BYTEA NOT NULL,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+  console.log('[DB] PostgreSQL connected, story_cache + audio_cache tables ready');
 }
 
 function getCacheFile(mode) {
@@ -460,14 +467,61 @@ async function resolveStoryImages(stories) {
 }
 
 // =====================================================================
+// AUDIO PERSISTENCE — Postgres (survives deploys) + filesystem (fast cache)
+// =====================================================================
+async function saveAudioToDB(filename, buffer) {
+  if (!pool) return;
+  try {
+    await pool.query(
+      `INSERT INTO audio_cache (filename, data) VALUES ($1, $2) ON CONFLICT (filename) DO NOTHING`,
+      [filename, buffer]
+    );
+  } catch (err) {
+    console.error(`[Audio DB] Save failed for ${filename}:`, err.message);
+  }
+}
+
+async function loadAudioFromDB(filename) {
+  if (!pool) return null;
+  try {
+    const res = await pool.query('SELECT data FROM audio_cache WHERE filename = $1', [filename]);
+    if (res.rows.length > 0) {
+      const buffer = res.rows[0].data;
+      // Restore to filesystem cache for fast subsequent serves
+      const filepath = path.join(AUDIO_DIR, filename);
+      fs.writeFileSync(filepath, buffer);
+      return buffer;
+    }
+  } catch (err) {
+    console.error(`[Audio DB] Load failed for ${filename}:`, err.message);
+  }
+  return null;
+}
+
+async function audioExistsInDB(filename) {
+  if (!pool) return false;
+  try {
+    const res = await pool.query('SELECT 1 FROM audio_cache WHERE filename = $1', [filename]);
+    return res.rows.length > 0;
+  } catch { return false; }
+}
+
+// =====================================================================
 // TTS GENERATION
 // =====================================================================
 async function generateTTSForStory(characterId, storyId, text, voiceId, energy, voiceSettings) {
   const filename = `${characterId}-${storyId}-${energy}.mp3`;
   const filepath = path.join(AUDIO_DIR, filename);
 
-  // Skip if already generated
+  // Skip if already on filesystem
   if (fs.existsSync(filepath)) return filename;
+
+  // Skip if already in Postgres — restore to filesystem
+  const dbAudio = await loadAudioFromDB(filename);
+  if (dbAudio) {
+    console.log(`  Restored from DB: ${filename} (${(dbAudio.length / 1024).toFixed(0)}KB)`);
+    return filename;
+  }
 
   if (!process.env.ELEVENLABS_API_KEY || process.env.ELEVENLABS_API_KEY === 'your-elevenlabs-key-here') {
     return null;
@@ -497,7 +551,9 @@ async function generateTTSForStory(characterId, storyId, text, voiceId, energy, 
     }
 
     const buffer = Buffer.from(await response.arrayBuffer());
+    // Save to filesystem (fast cache) AND Postgres (survives deploys)
     fs.writeFileSync(filepath, buffer);
+    await saveAudioToDB(filename, buffer);
     console.log(`  Generated: ${filename} (${(buffer.length / 1024).toFixed(0)}KB)`);
     return filename;
   } catch (err) {
@@ -720,15 +776,24 @@ app.get('/api/audio/:characterId/:storyId/:energy', async (req, res) => {
     return res.status(400).json({ error: 'energy must be highkey' });
   }
 
-  const filepath = path.join(AUDIO_DIR, `${characterId}-${storyId}-${energy}.mp3`);
+  const filename = `${characterId}-${storyId}-${energy}.mp3`;
+  const filepath = path.join(AUDIO_DIR, filename);
 
-  // If file exists, serve it immediately (cached)
+  // 1. Filesystem cache (fastest)
   if (fs.existsSync(filepath)) {
     res.set({ 'Content-Type': 'audio/mpeg', 'Cache-Control': 'public, max-age=86400' });
     return fs.createReadStream(filepath).pipe(res);
   }
 
-  // On-demand generation: find the story text and generate this one clip
+  // 2. Postgres (survives deploys) — restore to filesystem and serve
+  const dbAudio = await loadAudioFromDB(filename);
+  if (dbAudio) {
+    console.log(`[Audio] Restored from DB: ${filename}`);
+    res.set({ 'Content-Type': 'audio/mpeg', 'Cache-Control': 'public, max-age=86400' });
+    return res.send(dbAudio);
+  }
+
+  // 3. On-demand generation (last resort — costs ElevenLabs credits)
   const voice = CHARACTER_VOICES[characterId];
   if (!voice) return res.status(404).json({ error: 'Unknown character' });
 
@@ -769,12 +834,16 @@ app.post('/api/prepare-character', async (req, res) => {
   const cache = await loadCache(mode);
   if (!cache || !cache.stories) return res.json({ status: 'no_stories' });
 
-  const missing = cache.stories.some(story =>
-    !fs.existsSync(path.join(AUDIO_DIR, `${characterId}-${story.id}-headline-highkey.mp3`)) ||
-    !fs.existsSync(path.join(AUDIO_DIR, `${characterId}-${story.id}-summary-highkey.mp3`))
-  );
+  let allReady = true;
+  for (const story of cache.stories) {
+    const hFile = `${characterId}-${story.id}-headline-highkey.mp3`;
+    const sFile = `${characterId}-${story.id}-summary-highkey.mp3`;
+    const hExists = fs.existsSync(path.join(AUDIO_DIR, hFile)) || await audioExistsInDB(hFile);
+    const sExists = fs.existsSync(path.join(AUDIO_DIR, sFile)) || await audioExistsInDB(sFile);
+    if (!hExists || !sExists) { allReady = false; break; }
+  }
 
-  if (!missing) return res.json({ status: 'ready', preGenerated: true });
+  if (allReady) return res.json({ status: 'ready', preGenerated: true });
 
   // Kick off generation in background
   generateCharacterTTS(characterId, mode).catch(e => console.error('Char TTS error:', e));
@@ -790,8 +859,10 @@ app.get('/api/character-status/:characterId/:mode', async (req, res) => {
   let total = 0, generated = 0;
   for (const story of cache.stories) {
     total += 2; // headline + summary
-    if (fs.existsSync(path.join(AUDIO_DIR, `${characterId}-${story.id}-headline-highkey.mp3`))) generated++;
-    if (fs.existsSync(path.join(AUDIO_DIR, `${characterId}-${story.id}-summary-highkey.mp3`))) generated++;
+    const hFile = `${characterId}-${story.id}-headline-highkey.mp3`;
+    const sFile = `${characterId}-${story.id}-summary-highkey.mp3`;
+    if (fs.existsSync(path.join(AUDIO_DIR, hFile)) || await audioExistsInDB(hFile)) generated++;
+    if (fs.existsSync(path.join(AUDIO_DIR, sFile)) || await audioExistsInDB(sFile)) generated++;
   }
 
   res.json({ ready: generated === total, total, generated, pct: total > 0 ? Math.round(generated / total * 100) : 0 });
@@ -1159,6 +1230,25 @@ app.listen(PORT, async () => {
         dirty = true;
       }
       if (dirty) await saveCache(mode, cache);
+    }
+  }
+
+  // Restore audio files from Postgres → filesystem (survives deploys)
+  if (pool) {
+    try {
+      const audioFiles = fs.readdirSync(AUDIO_DIR).filter(f => f.endsWith('.mp3'));
+      if (audioFiles.length === 0) {
+        console.log('[Audio] No local audio files — restoring from Postgres...');
+        const res = await pool.query('SELECT filename, data FROM audio_cache');
+        for (const row of res.rows) {
+          fs.writeFileSync(path.join(AUDIO_DIR, row.filename), row.data);
+        }
+        console.log(`[Audio] Restored ${res.rows.length} audio files from Postgres`);
+      } else {
+        console.log(`[Audio] ${audioFiles.length} audio files already on disk`);
+      }
+    } catch (err) {
+      console.error('[Audio] Restore from DB failed:', err.message);
     }
   }
 
