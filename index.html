@@ -2889,10 +2889,13 @@ class SpeechManager {
   }
 
   _startAmplitudeTracking() {
-    // Use real analyser only when playing via BufferSource (connected through AudioContext graph)
-    // Audio element path uses synthetic — captureStream analyser is unreliable across browsers
-    if (this.analyser && this.currentSource && !this._useAudioEl) {
+    // Use real analyser when available — either BufferSource or captureStream connection
+    const useRealAnalyser = this.analyser && (
+      (this.currentSource && !this._useAudioEl) || this._analyserConnected
+    );
+    if (useRealAnalyser) {
       const dataArray = new Uint8Array(this.analyser.frequencyBinCount);
+      let silenceFrames = 0;
       const track = () => {
         if (!this.isSpeaking) return;
         this.analyser.getByteFrequencyData(dataArray);
@@ -2900,15 +2903,22 @@ class SpeechManager {
         for (let i = 0; i < dataArray.length; i++) sum += dataArray[i] * dataArray[i];
         const rms = Math.sqrt(sum / dataArray.length) / 255;
         const amplitude = Math.min(1, rms * 3);
-        this.onAmplitude(amplitude);
+        // Quick snap to zero on silence (mouth closes immediately on pauses)
+        if (amplitude < 0.02) {
+          silenceFrames++;
+          this.onAmplitude(silenceFrames > 2 ? 0 : amplitude);
+        } else {
+          silenceFrames = 0;
+          this.onAmplitude(amplitude);
+        }
         this._animFrame = requestAnimationFrame(track);
       };
       track();
     } else {
       // Synthetic amplitude — speech-like with natural pauses between phrases
       let t = 0;
-      let phraseT = 0;          // time within current phrase
-      let phraseDur = 1.5 + Math.random() * 2; // phrase length (1.5-3.5s)
+      let phraseT = 0;
+      let phraseDur = 1.5 + Math.random() * 2;
       let pauseDur = 0;
       let inPause = false;
       const track = () => {
@@ -2924,16 +2934,15 @@ class SpeechManager {
             phraseDur = 1.0 + Math.random() * 2.5;
           }
         } else {
-          // Syllable-like bursts with variation
           const syllable = Math.abs(Math.sin(t * 8 + Math.sin(t * 3) * 2));
-          const envelope = Math.sin(Math.PI * phraseT / phraseDur); // fade in/out per phrase
+          const envelope = Math.sin(Math.PI * phraseT / phraseDur);
           amplitude = Math.min(1, Math.max(0,
-            syllable * envelope * (0.5 + 0.3 * Math.random()) + 0.05
+            syllable * envelope * (0.5 + 0.3 * Math.random())
           ));
           if (phraseT >= phraseDur) {
             inPause = true;
             phraseT = 0;
-            pauseDur = 0.15 + Math.random() * 0.35; // 150-500ms pause
+            pauseDur = 0.15 + Math.random() * 0.35;
           }
         }
         this.onAmplitude(amplitude);
