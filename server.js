@@ -109,14 +109,24 @@ async function saveCache(mode, data) {
   } catch {}
 }
 
-const STORY_TTL_MS = 48 * 60 * 60 * 1000; // 48 hours
+const STORY_PUBLIC_TTL_MS = 48 * 60 * 60 * 1000; // 48 hours — visible on site
+const STORY_RETAIN_TTL_MS = 14 * 24 * 60 * 60 * 1000; // 14 days — retained in DB
 
-// Retire stories older than 48h, return surviving ones
+// Filter stories visible to users (< 48h old)
+function getPublicStories(stories) {
+  const now = Date.now();
+  return stories.filter(s => {
+    const addedAt = s.addedAt ? new Date(s.addedAt).getTime() : 0;
+    return (now - addedAt) < STORY_PUBLIC_TTL_MS;
+  });
+}
+
+// Permanently remove stories older than 14 days from DB
 function pruneExpiredStories(stories) {
   const now = Date.now();
   return stories.filter(s => {
     const addedAt = s.addedAt ? new Date(s.addedAt).getTime() : 0;
-    return (now - addedAt) < STORY_TTL_MS;
+    return (now - addedAt) < STORY_RETAIN_TTL_MS;
   });
 }
 
@@ -628,7 +638,7 @@ async function refreshNews(mode = 'everything') {
 }
 
 // =====================================================================
-// SCHEDULE — 6am and 6pm ET daily
+// SCHEDULE — 6am ET daily
 // =====================================================================
 function getNextRefreshTime() {
   const now = new Date();
@@ -637,14 +647,13 @@ function getNextRefreshTime() {
   const etParts = etStr.split(', ')[1].split(':');
   const etHour = parseInt(etParts[0]);
 
-  // Next 6am or 6pm ET
+  // Next 6am ET only (once daily to control ElevenLabs costs)
   const etNow = new Date(now.toLocaleString('en-US', { timeZone: 'America/New_York' }));
-  let nextHour;
-  if (etHour < 6) nextHour = 6;
-  else if (etHour < 18) nextHour = 18;
-  else { nextHour = 6; etNow.setDate(etNow.getDate() + 1); }
-
-  etNow.setHours(nextHour, 0, 0, 0);
+  if (etHour >= 6) {
+    // Already past 6am today — next is tomorrow 6am
+    etNow.setDate(etNow.getDate() + 1);
+  }
+  etNow.setHours(6, 0, 0, 0);
   return etNow;
 }
 
@@ -667,7 +676,7 @@ function scheduleNextRefresh() {
 // API ENDPOINTS
 // =====================================================================
 
-// GET /api/stories?mode=everything — serve cached stories
+// GET /api/stories?mode=everything — serve cached stories (public = <48h only)
 app.get('/api/stories', async (req, res) => {
   const mode = req.query.mode || 'everything';
   const cache = await loadCache(mode);
@@ -676,16 +685,17 @@ app.get('/api/stories', async (req, res) => {
     return res.status(404).json({ error: 'No cached stories yet. Refresh in progress...' });
   }
 
-  res.json(cache);
+  // Only serve stories < 48h old to clients (older ones retained in DB but hidden)
+  res.json({ ...cache, stories: getPublicStories(cache.stories || []) });
 });
 
-// POST /api/news — legacy endpoint, serves cache only (refreshes happen on 6am/6pm schedule)
+// POST /api/news — legacy endpoint, serves cache only (refreshes happen on 6am ET schedule)
 app.post('/api/news', async (req, res) => {
   const { mode = 'everything' } = req.body;
   const cache = await loadCache(mode);
 
   if (cache && cache.stories && cache.stories.length > 0) {
-    return res.json({ stories: cache.stories });
+    return res.json({ stories: getPublicStories(cache.stories) });
   }
 
   // No cache at all — do initial fetch (only happens on very first boot)
@@ -700,7 +710,7 @@ app.post('/api/news', async (req, res) => {
       console.error('News fetch error:', err);
     }
   }
-  res.status(503).json({ error: 'Stories not available yet. Next refresh at 6am/6pm ET.' });
+  res.status(503).json({ error: 'Stories not available yet. Next refresh at 6am ET.' });
 });
 
 // GET /api/audio/:characterId/:storyId/:energy — serve pre-generated audio
@@ -1156,9 +1166,9 @@ app.listen(PORT, async () => {
     console.log('No cached stories found — doing initial fetch...');
     await refreshNews('everything');
   } else {
-    console.log('Cached stories found. Serving from cache until next 6am/6pm refresh.');
+    console.log('Cached stories found. Serving from cache until next 6am ET refresh.');
   }
 
-  // Schedule 6am/6pm ET refreshes
+  // Schedule 6am ET refreshes
   scheduleNextRefresh();
 });
