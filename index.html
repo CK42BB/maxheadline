@@ -3235,7 +3235,7 @@ class FinancialTicker {
 
     // Canvas for ticker texture
     this.canvas = document.createElement('canvas');
-    this.canvas.width = 2048;
+    this.canvas.width = 4096;
     this.canvas.height = 64;
     this.ctx = this.canvas.getContext('2d');
 
@@ -3334,7 +3334,9 @@ class FinancialTicker {
     if (!this.totalWidth) return;
     // Scroll via texture offset
     this.scrollOffset += 0.0003;
-    if (this.scrollOffset > 0.5) this.scrollOffset -= 0.5;
+    // Wrap at exactly one full set of items for seamless looping
+    const wrapAt = this.totalWidth / this.canvas.width;
+    if (this.scrollOffset > wrapAt) this.scrollOffset -= wrapAt;
     this.texture.offset.x = this.scrollOffset;
   }
 

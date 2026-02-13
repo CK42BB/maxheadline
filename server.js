@@ -929,7 +929,7 @@ app.get('/api/stats', (req, res) => {
 // FINANCIAL TICKER — fetch prices from Yahoo Finance
 // =====================================================================
 const TICKER_SYMBOLS = {
-  '^DJI': 'DJI', '^GSPC': 'SPX', 'BTC-USD': 'BTC', 'ETH-USD': 'ETH',
+  '^DJI': 'DJI', '^GSPC': 'SPX', '^VIX': 'VIX', 'BTC-USD': 'BTC', 'ETH-USD': 'ETH',
   'GC=F': 'GOLD', 'SI=F': 'SILVER', 'EURUSD=X': 'EUR/USD', 'GBPUSD=X': 'GBP/USD',
   'AAPL': 'AAPL', 'NVDA': 'NVDA', 'TSLA': 'TSLA', 'GOOG': 'GOOG',
   'META': 'META', 'AMZN': 'AMZN', 'MSFT': 'MSFT'
@@ -1069,14 +1069,20 @@ async function fetchTickerData() {
   return [
     { symbol: 'DJI', price: 44200, change: 0.12, up: true },
     { symbol: 'SPX', price: 6050, change: 0.08, up: true },
+    { symbol: 'VIX', price: 15.2, change: -2.1, up: false },
     { symbol: 'BTC', price: 97500, change: 1.45, up: true },
     { symbol: 'ETH', price: 2650, change: -0.32, up: false },
     { symbol: 'GOLD', price: 2920, change: 0.25, up: true },
+    { symbol: 'SILVER', price: 32.5, change: 0.4, up: true },
+    { symbol: 'EUR/USD', price: 1.0425, change: -0.05, up: false },
+    { symbol: 'GBP/USD', price: 1.2580, change: 0.03, up: true },
     { symbol: 'AAPL', price: 232, change: -0.18, up: false },
     { symbol: 'NVDA', price: 128, change: 2.1, up: true },
     { symbol: 'TSLA', price: 345, change: 1.8, up: true },
     { symbol: 'GOOG', price: 188, change: 0.45, up: true },
-    { symbol: 'META', price: 725, change: 0.67, up: true }
+    { symbol: 'META', price: 725, change: 0.67, up: true },
+    { symbol: 'AMZN', price: 228, change: 0.35, up: true },
+    { symbol: 'MSFT', price: 415, change: 0.22, up: true }
   ];
 }
 
