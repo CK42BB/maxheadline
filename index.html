@@ -3289,7 +3289,7 @@ class FinancialTicker {
       const symW = ctx.measureText(item.symbol).width;
       const priceW = ctx.measureText(priceStr).width;
       const changeW = ctx.measureText(changeStr).width;
-      const w = symW + 8 + priceW + 8 + changeW + 40;
+      const w = symW + 14 + priceW + 14 + changeW + 60;
       total += w;
       return { symbol: item.symbol, priceStr, changeStr, up: item.up, symW, priceW, changeW, totalW: w };
     });
@@ -3358,15 +3358,15 @@ class FinancialTicker {
 
         ctx.fillStyle = '#a0a8c0';
         ctx.fillText(it.symbol, x, H / 2);
-        x += it.symW + 8;
+        x += it.symW + 14;
 
         ctx.fillStyle = '#e0e0e8';
         ctx.fillText(it.priceStr, x, H / 2);
-        x += it.priceW + 8;
+        x += it.priceW + 14;
 
         ctx.fillStyle = it.up ? '#39ff14' : '#ff4444';
         ctx.fillText(it.changeStr, x, H / 2);
-        x += it.changeW + 40;
+        x += it.changeW + 60;
       }
     }
   }
