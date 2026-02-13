@@ -2899,8 +2899,9 @@ class SpeechManager {
   }
 
   _startAmplitudeTracking() {
-    // If analyser is connected (captureStream worked or using BufferSource), use real data
-    if (this.analyser && (this._analyserConnected || this.currentSource)) {
+    // Use real analyser only when playing via BufferSource (connected through AudioContext graph)
+    // Audio element path uses synthetic — captureStream analyser is unreliable across browsers
+    if (this.analyser && this.currentSource && !this._useAudioEl) {
       const dataArray = new Uint8Array(this.analyser.frequencyBinCount);
       const track = () => {
         if (!this.isSpeaking) return;
@@ -2914,7 +2915,7 @@ class SpeechManager {
       };
       track();
     } else {
-      // Synthetic amplitude for mobile when analyser isn't connected
+      // Synthetic amplitude — always guarantees mouth movement while speaking
       let t = 0;
       const track = () => {
         if (!this.isSpeaking) return;
