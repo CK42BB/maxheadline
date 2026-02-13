@@ -108,14 +108,24 @@ async function saveCache(mode, data) {
   // Write to Postgres
   if (pool) {
     try {
+      const jsonStr = JSON.stringify(data);
       await pool.query(
-        `INSERT INTO story_cache (mode, data, updated_at) VALUES ($1, $2, NOW())
-         ON CONFLICT (mode) DO UPDATE SET data = $2, updated_at = NOW()`,
-        [mode, JSON.stringify(data)]
+        `INSERT INTO story_cache (mode, data, updated_at) VALUES ($1, $2::jsonb, NOW())
+         ON CONFLICT (mode) DO UPDATE SET data = $2::jsonb, updated_at = NOW()`,
+        [mode, jsonStr]
       );
+      // VERIFY the write succeeded by reading back
+      const verify = await pool.query('SELECT LENGTH(data::text) as len FROM story_cache WHERE mode = $1', [mode]);
+      if (verify.rows.length > 0) {
+        console.log(`[DB] saveCache ${mode}: verified (${verify.rows[0].len} bytes in DB)`);
+      } else {
+        console.error(`[DB] saveCache ${mode}: VERIFICATION FAILED — row not found after write!`);
+      }
     } catch (err) {
-      console.error('[DB] saveCache error:', err.message);
+      console.error(`[DB] saveCache error for ${mode}:`, err.message);
     }
+  } else {
+    console.warn(`[DB] saveCache ${mode}: NO POOL — writing to file only!`);
   }
   // Also write file as local backup
   try {
@@ -479,12 +489,17 @@ async function resolveStoryImages(stories) {
 // AUDIO PERSISTENCE — Postgres (survives deploys) + filesystem (fast cache)
 // =====================================================================
 async function saveAudioToDB(filename, buffer) {
-  if (!pool) return;
+  if (!pool) { console.warn(`[Audio DB] NO POOL — ${filename} NOT saved to DB!`); return; }
   try {
     await pool.query(
       `INSERT INTO audio_cache (filename, data) VALUES ($1, $2) ON CONFLICT (filename) DO NOTHING`,
       [filename, buffer]
     );
+    // Verify write
+    const verify = await pool.query('SELECT 1 FROM audio_cache WHERE filename = $1', [filename]);
+    if (verify.rows.length === 0) {
+      console.error(`[Audio DB] VERIFICATION FAILED for ${filename} — not in DB after write!`);
+    }
   } catch (err) {
     console.error(`[Audio DB] Save failed for ${filename}:`, err.message);
   }
@@ -1313,6 +1328,39 @@ app.post('/api/fix-images', async (req, res) => {
   }
 
   res.json({ status: 'done', results });
+});
+
+// GET /api/db-status — diagnostic endpoint to verify Postgres connectivity and data
+app.get('/api/db-status', async (req, res) => {
+  const status = { pool: !!pool, tables: {} };
+  if (!pool) return res.json({ ...status, error: 'No database pool — DATABASE_URL not set?' });
+  try {
+    // Count rows in each table
+    const storyRes = await pool.query('SELECT mode, LENGTH(data::text) as data_len, updated_at FROM story_cache');
+    status.tables.story_cache = storyRes.rows.map(r => ({
+      mode: r.mode, dataLen: r.data_len, updatedAt: r.updated_at
+    }));
+
+    const audioCount = await pool.query('SELECT COUNT(*) as cnt FROM audio_cache');
+    status.tables.audio_cache_count = parseInt(audioCount.rows[0].cnt);
+
+    // Sample audio filenames
+    const audioSample = await pool.query('SELECT filename FROM audio_cache ORDER BY filename LIMIT 20');
+    status.tables.audio_sample = audioSample.rows.map(r => r.filename);
+
+    const powerRes = await pool.query('SELECT id, generated_at FROM power_ticker');
+    status.tables.power_ticker = powerRes.rows;
+
+    // Verify write works
+    const testKey = '_db_test_' + Date.now();
+    await pool.query(`INSERT INTO story_cache (mode, data, updated_at) VALUES ($1, $2, NOW())`, [testKey, JSON.stringify({test: true})]);
+    const verify = await pool.query('SELECT 1 FROM story_cache WHERE mode = $1', [testKey]);
+    status.writeVerified = verify.rows.length > 0;
+    await pool.query('DELETE FROM story_cache WHERE mode = $1', [testKey]);
+  } catch (err) {
+    status.error = err.message;
+  }
+  res.json(status);
 });
 
 // POST /api/regen-tts — regenerate missing TTS audio from cached stories
