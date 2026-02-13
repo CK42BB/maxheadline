@@ -1399,46 +1399,38 @@ app.listen(PORT, async () => {
     }
   }
 
-  // Check each mode — refresh any that are stale (>20h) or empty
-  const CATCHUP_MS = 20 * 60 * 60 * 1000; // 20 hours
-  const staleModes = [];
+  // Check each mode — ONLY refresh if cache is completely empty (cold start)
+  // Stale stories are fine to serve — 6pm ET schedule handles updates
+  // This prevents expensive re-fetches on every deploy/restart
+  const emptyModes = [];
   for (const m of ['everything', 'uponly', 'sota']) {
     const c = await loadCache(m);
     if (!c || !c.stories || c.stories.length === 0) {
-      staleModes.push(m);
-      console.log(`[Startup] ${m}: no stories — needs refresh`);
+      emptyModes.push(m);
+      console.log(`[Startup] ${m}: EMPTY — needs initial fetch`);
     } else {
       const fetchedAge = c.fetchedAt ? Date.now() - new Date(c.fetchedAt).getTime() : Infinity;
-      if (fetchedAge > CATCHUP_MS) {
-        staleModes.push(m);
-        console.log(`[Startup] ${m}: stale (${(fetchedAge/3600000).toFixed(1)}h old) — needs refresh`);
-      } else {
-        console.log(`[Startup] ${m}: fresh (${(fetchedAge/3600000).toFixed(1)}h old, ${c.stories.length} stories)`);
-      }
+      const publicCount = getPublicStories(c.stories).length;
+      console.log(`[Startup] ${m}: ${c.stories.length} stories (${publicCount} public), ${(fetchedAge/3600000).toFixed(1)}h old`);
     }
   }
-  if (staleModes.length > 0) {
-    console.log(`Catch-up refresh for: ${staleModes.join(', ')}`);
-    for (const m of staleModes) {
+  if (emptyModes.length > 0) {
+    console.log(`Cold-start fetch for: ${emptyModes.join(', ')}`);
+    for (const m of emptyModes) {
       await refreshNews(m);
     }
   } else {
-    console.log('All modes fresh. Serving from cache until next 6pm ET refresh.');
+    console.log('All modes have stories. Serving from cache until next 6pm ET refresh.');
   }
 
-  // Check power ticker staleness
+  // Power ticker — only fetch if completely empty
   const powerData = await loadPowerTicker();
-  if (!powerData || !powerData.rankings || !powerData.generatedAt) {
-    console.log('[Startup] Power ticker: empty — needs refresh');
+  if (!powerData || !powerData.rankings) {
+    console.log('[Startup] Power ticker: empty — fetching initial data');
     await refreshPowerTicker();
   } else {
     const powerAge = Date.now() - new Date(powerData.generatedAt).getTime();
-    if (powerAge > CATCHUP_MS) {
-      console.log(`[Startup] Power ticker: stale (${(powerAge/3600000).toFixed(1)}h old) — needs refresh`);
-      await refreshPowerTicker();
-    } else {
-      console.log(`[Startup] Power ticker: fresh (${(powerAge/3600000).toFixed(1)}h old, ${powerData.rankings.length} entries)`);
-    }
+    console.log(`[Startup] Power ticker: ${powerData.rankings.length} entries, ${(powerAge/3600000).toFixed(1)}h old`);
   }
 
   // Schedule 6pm ET refreshes
