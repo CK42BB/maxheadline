@@ -1339,6 +1339,23 @@ app.post('/api/fix-images', async (req, res) => {
   res.json({ status: 'done', results });
 });
 
+// POST /api/patch-story — manually update fields on a specific story
+app.post('/api/patch-story', async (req, res) => {
+  const { mode = 'everything', storyId, fields } = req.body;
+  if (!storyId || !fields) return res.status(400).json({ error: 'storyId and fields required' });
+  const cache = await loadCache(mode);
+  if (!cache || !cache.stories) return res.status(404).json({ error: 'no cache for ' + mode });
+  const story = cache.stories.find(s => s.id === storyId);
+  if (!story) return res.status(404).json({ error: 'story not found: ' + storyId });
+  const safe = ['headline', 'summary', 'summaryHighkey', 'emotion', 'severity', 'source', 'sourceUrl', 'imageUrl', 'category', 'newsDate'];
+  let updated = [];
+  for (const [k, v] of Object.entries(fields)) {
+    if (safe.includes(k)) { story[k] = v; updated.push(k); }
+  }
+  await saveCache(mode, cache);
+  res.json({ status: 'patched', storyId, updated });
+});
+
 // GET /api/db-status — diagnostic endpoint to verify Postgres connectivity and data
 app.get('/api/db-status', async (req, res) => {
   const dbEnvKeys = Object.keys(process.env).filter(k =>
