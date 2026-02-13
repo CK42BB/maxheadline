@@ -2889,11 +2889,9 @@ class SpeechManager {
   }
 
   _startAmplitudeTracking() {
-    // Use real analyser when available — either BufferSource or captureStream connection
-    const useRealAnalyser = this.analyser && (
-      (this.currentSource && !this._useAudioEl) || this._analyserConnected
-    );
-    if (useRealAnalyser) {
+    // Real analyser ONLY for BufferSource path (non-audio-element)
+    // captureStream analyser is unreliable across browsers — returns zeros
+    if (this.analyser && this.currentSource && !this._useAudioEl) {
       const dataArray = new Uint8Array(this.analyser.frequencyBinCount);
       let silenceFrames = 0;
       const track = () => {
