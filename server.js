@@ -1335,7 +1335,10 @@ app.get('/api/db-status', async (req, res) => {
   const dbEnvKeys = Object.keys(process.env).filter(k =>
     k.includes('DATABASE') || k.includes('POSTGRES') || k.includes('PG') || k.includes('DB_')
   );
-  const status = { pool: !!pool, dbEnvKeys, tables: {} };
+  const allEnvKeys = Object.keys(process.env).filter(k =>
+    !k.startsWith('npm_') && !k.startsWith('NODE_') && k !== 'PATH' && k !== 'HOME' && k !== 'USER'
+  ).sort();
+  const status = { pool: !!pool, dbEnvKeys, allEnvKeys, tables: {} };
   if (!pool) return res.json({ ...status, error: 'No database pool — DATABASE_URL not set?' });
   try {
     // Count rows in each table
