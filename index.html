@@ -3277,48 +3277,8 @@ class FinancialTicker {
 
   renderTexture() {
     const ctx = this.ctx;
+    const W = this.canvas.width; // fixed 2048, never resize (GPU compat)
     const H = this.canvas.height;
-
-    // Measure total width of one full pass first
-    ctx.font = 'bold 28px monospace';
-    ctx.textBaseline = 'middle';
-
-    if (this.tickerData.length === 0) {
-      const W = this.canvas.width;
-      ctx.clearRect(0, 0, W, H);
-      ctx.fillStyle = '#0c0820';
-      ctx.fillRect(0, 0, W, H);
-      ctx.fillStyle = '#00f0ff';
-      ctx.fillRect(0, 0, W, 2);
-      ctx.fillStyle = '#ff2d95';
-      ctx.fillRect(0, H - 2, W, 2);
-      ctx.fillStyle = '#8088a0';
-      const noData = 'AWAITING MARKET DATA \u25C6 ';
-      const noDataW = ctx.measureText(noData).width;
-      for (let x = 0; x < W; x += noDataW) {
-        ctx.fillText(noData, x, H / 2);
-      }
-      this.texture.needsUpdate = true;
-      return;
-    }
-
-    // Measure one full set of ticker items
-    let onePassWidth = 0;
-    for (const item of this.tickerData) {
-      onePassWidth += ctx.measureText(item.symbol).width + 8;
-      const priceStr = item.price >= 1000 ? item.price.toLocaleString('en-US', { maximumFractionDigits: 0 })
-        : item.price >= 1 ? item.price.toFixed(2) : item.price.toFixed(4);
-      onePassWidth += ctx.measureText(priceStr).width + 8;
-      const changeStr = (item.up ? '+' : '') + item.change.toFixed(2) + '%';
-      onePassWidth += ctx.measureText(changeStr).width + 40;
-    }
-
-    // Resize canvas to fit two full passes (for seamless wrap)
-    const neededWidth = Math.ceil(onePassWidth) * 2;
-    if (this.canvas.width !== neededWidth) {
-      this.canvas.width = neededWidth;
-    }
-    const W = this.canvas.width;
 
     ctx.clearRect(0, 0, W, H);
     ctx.fillStyle = '#0c0820';
@@ -3331,9 +3291,21 @@ class FinancialTicker {
     ctx.font = 'bold 28px monospace';
     ctx.textBaseline = 'middle';
 
+    if (this.tickerData.length === 0) {
+      ctx.fillStyle = '#8088a0';
+      const noData = 'AWAITING MARKET DATA \u25C6 ';
+      const noDataW = ctx.measureText(noData).width;
+      for (let x = 0; x < W; x += noDataW) {
+        ctx.fillText(noData, x, H / 2);
+      }
+      this.texture.needsUpdate = true;
+      return;
+    }
+
+    // Draw ticker items, tiling to fill the full canvas width
     let x = 0;
-    // Draw twice for seamless looping
-    for (let pass = 0; pass < 2; pass++) {
+    let firstPassDone = false;
+    while (x < W) {
       for (const item of this.tickerData) {
         // Symbol
         ctx.fillStyle = '#a0a8c0';
@@ -3353,8 +3325,8 @@ class FinancialTicker {
         ctx.fillText(changeStr, x, H / 2);
         x += ctx.measureText(changeStr).width + 40;
       }
+      if (!firstPassDone) { this.totalWidth = x; firstPassDone = true; }
     }
-    this.totalWidth = onePassWidth;
     this.texture.needsUpdate = true;
   }
 
