@@ -705,33 +705,34 @@ async function refreshNews(mode = 'everything') {
 // =====================================================================
 function getNextRefreshTime() {
   const now = new Date();
-  // Convert to ET
-  const etStr = now.toLocaleString('en-US', { timeZone: 'America/New_York', hour12: false });
-  const etParts = etStr.split(', ')[1].split(':');
-  const etHour = parseInt(etParts[0]);
+  // Get current ET hour using Intl (reliable across environments)
+  const etHour = parseInt(new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/New_York', hour: 'numeric', hour12: false
+  }).format(now));
 
-  // Next 6pm ET only (once daily — captures the day's news before evening)
-  const etNow = new Date(now.toLocaleString('en-US', { timeZone: 'America/New_York' }));
-  if (etHour >= 18) {
-    // Already past 6pm today — next is tomorrow 6pm
-    etNow.setDate(etNow.getDate() + 1);
-  }
-  etNow.setHours(18, 0, 0, 0);
-  return etNow;
+  // Build target in "pseudo-UTC" (ET time values in a UTC Date object)
+  const etPseudo = new Date(now.toLocaleString('en-US', { timeZone: 'America/New_York' }));
+  const target = new Date(etPseudo);
+  target.setHours(18, 0, 0, 0);
+  if (etHour >= 18) target.setDate(target.getDate() + 1);
+
+  // Convert pseudo-UTC back to real UTC by adding the timezone offset
+  const etOffset = now.getTime() - etPseudo.getTime();
+  return new Date(target.getTime() + etOffset);
 }
 
 function scheduleNextRefresh() {
   const next = getNextRefreshTime();
-  const delay = next.getTime() - Date.now();
+  const delay = Math.max(next.getTime() - Date.now(), 60000); // minimum 1 min safety
   const delayMin = (delay / 60000).toFixed(0);
-  console.log(`Next refresh scheduled for ${next.toLocaleString('en-US', { timeZone: 'America/New_York' })} ET (${delayMin} min)`);
+  const delayHrs = (delay / 3600000).toFixed(1);
+  console.log(`Next refresh at ${next.toISOString()} (${delayHrs}h / ${delayMin} min from now)`);
 
   setTimeout(async () => {
-    // Refresh all three modes
+    console.log(`=== Scheduled 6pm ET refresh firing at ${new Date().toISOString()} ===`);
     for (const mode of ['everything', 'uponly', 'sota']) {
       await refreshNews(mode);
     }
-    // Refresh power ticker
     await refreshPowerTicker();
     scheduleNextRefresh();
   }, delay);
