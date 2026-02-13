@@ -1332,7 +1332,10 @@ app.post('/api/fix-images', async (req, res) => {
 
 // GET /api/db-status — diagnostic endpoint to verify Postgres connectivity and data
 app.get('/api/db-status', async (req, res) => {
-  const status = { pool: !!pool, tables: {} };
+  const dbEnvKeys = Object.keys(process.env).filter(k =>
+    k.includes('DATABASE') || k.includes('POSTGRES') || k.includes('PG') || k.includes('DB_')
+  );
+  const status = { pool: !!pool, dbEnvKeys, tables: {} };
   if (!pool) return res.json({ ...status, error: 'No database pool — DATABASE_URL not set?' });
   try {
     // Count rows in each table
