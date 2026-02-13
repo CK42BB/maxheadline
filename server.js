@@ -754,7 +754,7 @@ app.get('/api/stories', async (req, res) => {
   res.json({ ...cache, stories: getPublicStories(cache.stories || []) });
 });
 
-// POST /api/news — legacy endpoint, serves cache only (refreshes happen on 6pm ET schedule)
+// POST /api/news — serves cache ONLY. Never triggers a refresh.
 app.post('/api/news', async (req, res) => {
   const { mode = 'everything' } = req.body;
   const cache = await loadCache(mode);
@@ -763,19 +763,7 @@ app.post('/api/news', async (req, res) => {
     return res.json({ stories: getPublicStories(cache.stories) });
   }
 
-  // No cache at all — do initial fetch (only happens on very first boot)
-  if (!isRefreshing) {
-    try {
-      await refreshNews(mode);
-      const freshCache = await loadCache(mode);
-      if (freshCache) {
-        return res.json({ stories: freshCache.stories });
-      }
-    } catch (err) {
-      console.error('News fetch error:', err);
-    }
-  }
-  res.status(503).json({ error: 'Stories not available yet. Next refresh at 6pm ET.' });
+  res.status(503).json({ error: 'No stories cached. Next refresh at 6pm ET.' });
 });
 
 // GET /api/audio/:characterId/:storyId/:energy — serve pre-generated audio
@@ -1399,35 +1387,24 @@ app.listen(PORT, async () => {
     }
   }
 
-  // Check each mode — ONLY refresh if cache is completely empty (cold start)
-  // Stale stories are fine to serve — 6pm ET schedule handles updates
-  // This prevents expensive re-fetches on every deploy/restart
-  const emptyModes = [];
+  // NEVER refresh on startup — serve whatever is in DB, even if stale/empty.
+  // Only two refresh triggers exist: 6pm ET schedule + manual POST /api/refresh.
+  // This guarantees deploys/restarts NEVER burn API or TTS credits.
   for (const m of ['everything', 'uponly', 'sota']) {
     const c = await loadCache(m);
     if (!c || !c.stories || c.stories.length === 0) {
-      emptyModes.push(m);
-      console.log(`[Startup] ${m}: EMPTY — needs initial fetch`);
+      console.log(`[Startup] ${m}: no stories cached — will populate at next 6pm ET or manual refresh`);
     } else {
       const fetchedAge = c.fetchedAt ? Date.now() - new Date(c.fetchedAt).getTime() : Infinity;
       const publicCount = getPublicStories(c.stories).length;
       console.log(`[Startup] ${m}: ${c.stories.length} stories (${publicCount} public), ${(fetchedAge/3600000).toFixed(1)}h old`);
     }
   }
-  if (emptyModes.length > 0) {
-    console.log(`Cold-start fetch for: ${emptyModes.join(', ')}`);
-    for (const m of emptyModes) {
-      await refreshNews(m);
-    }
-  } else {
-    console.log('All modes have stories. Serving from cache until next 6pm ET refresh.');
-  }
 
-  // Power ticker — only fetch if completely empty
+  // Power ticker — log status only, never auto-refresh
   const powerData = await loadPowerTicker();
   if (!powerData || !powerData.rankings) {
-    console.log('[Startup] Power ticker: empty — fetching initial data');
-    await refreshPowerTicker();
+    console.log('[Startup] Power ticker: empty — will populate at next 6pm ET or manual refresh');
   } else {
     const powerAge = Date.now() - new Date(powerData.generatedAt).getTime();
     console.log(`[Startup] Power ticker: ${powerData.rankings.length} entries, ${(powerAge/3600000).toFixed(1)}h old`);
