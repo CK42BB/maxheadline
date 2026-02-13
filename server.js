@@ -421,7 +421,9 @@ function isGenericImage(url) {
   const genericPatterns = [
     'logo', 'icon', 'favicon', 'social-share', 'default-image',
     'placeholder', 'og-image', 'site-image', 'brand', 'avatar',
-    '/static/assets/images/', '_default.', 'noimage', 'generic'
+    '/static/assets/images/', '_default.', 'noimage', 'generic',
+    'facebook-default', // NPR default share image
+    'dims.apnews.com/dims4/default/' // AP News generic placeholder
   ];
   if (genericPatterns.some(p => lower.includes(p))) return true;
   // Skip tiny images (likely icons) based on URL hints
@@ -1278,6 +1280,39 @@ app.get('/api/ticker', async (req, res) => {
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
+});
+
+// POST /api/fix-images — re-resolve images for stories with bad/missing imageUrls
+// Does NOT touch stories, audio, or anything else — only updates imageUrl field
+app.post('/api/fix-images', async (req, res) => {
+  const { mode = 'everything' } = req.body;
+  const modes = mode === 'all' ? ['everything', 'uponly', 'sota'] : [mode];
+  const results = {};
+
+  for (const m of modes) {
+    const cache = await loadCache(m);
+    if (!cache || !cache.stories) { results[m] = 'no cache'; continue; }
+
+    const before = cache.stories.filter(s => s.imageUrl && !isGenericImage(s.imageUrl)).length;
+    // Clear generic/bad imageUrls so resolveStoryImages will re-fetch them
+    cache.stories.forEach(s => {
+      if (!s.imageUrl || isGenericImage(s.imageUrl)) {
+        s.imageUrl = null;
+      }
+    });
+    const missing = cache.stories.filter(s => !s.imageUrl).length;
+    console.log(`[fix-images] ${m}: ${missing} stories need images (${before} already good)`);
+
+    // Run the full image resolution pipeline
+    await resolveStoryImages(cache.stories);
+    await saveCache(m, cache);
+
+    const after = cache.stories.filter(s => s.imageUrl && !isGenericImage(s.imageUrl)).length;
+    results[m] = { before, after, total: cache.stories.length };
+    console.log(`[fix-images] ${m}: ${before} → ${after} good images`);
+  }
+
+  res.json({ status: 'done', results });
 });
 
 // POST /api/regen-tts — regenerate missing TTS audio from cached stories
