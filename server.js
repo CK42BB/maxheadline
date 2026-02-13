@@ -71,7 +71,14 @@ async function initDB() {
       created_at TIMESTAMPTZ DEFAULT NOW()
     )
   `);
-  console.log('[DB] PostgreSQL connected, story_cache + audio_cache tables ready');
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS power_ticker (
+      id TEXT PRIMARY KEY,
+      data JSONB NOT NULL,
+      generated_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+  console.log('[DB] PostgreSQL connected, story_cache + audio_cache + power_ticker tables ready');
 }
 
 function getCacheFile(mode) {
@@ -724,6 +731,8 @@ function scheduleNextRefresh() {
     for (const mode of ['everything', 'uponly', 'sota']) {
       await refreshNews(mode);
     }
+    // Refresh power ticker
+    await refreshPowerTicker();
     scheduleNextRefresh();
   }, delay);
 }
@@ -997,6 +1006,122 @@ app.get('/api/stats', (req, res) => {
 });
 
 // =====================================================================
+// POWER TICKER — daily public figure power scores via Anthropic API
+// =====================================================================
+const POWER_TICKER_FILE = path.join(DATA_DIR, 'power-ticker.json');
+
+async function loadPowerTicker() {
+  if (pool) {
+    try {
+      const res = await pool.query("SELECT data, generated_at FROM power_ticker WHERE id = 'current'");
+      if (res.rows.length > 0) return res.rows[0].data;
+    } catch (err) {
+      console.error('[PowerTicker] DB load error:', err.message);
+    }
+  }
+  if (fs.existsSync(POWER_TICKER_FILE)) {
+    try { return JSON.parse(fs.readFileSync(POWER_TICKER_FILE, 'utf8')); } catch { return null; }
+  }
+  return null;
+}
+
+async function savePowerTicker(data) {
+  if (pool) {
+    try {
+      await pool.query(
+        `INSERT INTO power_ticker (id, data, generated_at) VALUES ('current', $1, NOW())
+         ON CONFLICT (id) DO UPDATE SET data = $1, generated_at = NOW()`,
+        [JSON.stringify(data)]
+      );
+    } catch (err) {
+      console.error('[PowerTicker] DB save error:', err.message);
+    }
+  }
+  try { fs.writeFileSync(POWER_TICKER_FILE, JSON.stringify(data, null, 2)); } catch {}
+}
+
+async function fetchPowerRankings() {
+  const response = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': process.env.ANTHROPIC_API_KEY,
+      'anthropic-version': '2023-06-01'
+    },
+    body: JSON.stringify({
+      model: 'claude-sonnet-4-5-20250929',
+      max_tokens: 2048,
+      tools: [{ type: 'web_search_20250305', name: 'web_search', max_uses: 6 }],
+      messages: [{
+        role: 'user',
+        content: `You are a political/cultural power analyst. Search today's news and score 30 prominent public figures on their "power trajectory" today — are they gaining or losing influence/momentum RIGHT NOW based on today's headlines?
+
+Score each person from -5 (terrible day, major scandal/loss) to +5 (dominant day, major win/breakthrough). Use LAST NAMES ONLY (e.g. "Trump" not "Donald Trump"). Mix of politics, tech, business, culture, global leaders.
+
+Sort by absolute score descending (biggest movers first).
+
+Return ONLY a JSON array, no markdown fences:
+[{"name":"LastName","score":3},{"name":"LastName","score":-2}...]
+
+CRITICAL: Exactly 30 entries. Real scores based on TODAY's actual news. No ties at 0 — everyone is moving.`
+      }]
+    })
+  });
+
+  const data = await response.json();
+  if (data.error) throw new Error(data.error.message);
+
+  const text = (data.content || []).filter(b => b.type === 'text').map(b => b.text).join('');
+  const arrStart = text.indexOf('[');
+  const arrEnd = text.lastIndexOf(']');
+  if (arrStart === -1 || arrEnd === -1) throw new Error('No JSON array in power ticker response');
+  return JSON.parse(text.substring(arrStart, arrEnd + 1));
+}
+
+let isRefreshingPower = false;
+
+async function refreshPowerTicker() {
+  if (isRefreshingPower) return;
+  isRefreshingPower = true;
+  try {
+    console.log('[PowerTicker] Fetching power rankings...');
+    let rankings;
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      try {
+        rankings = await fetchPowerRankings();
+        console.log(`[PowerTicker] Got ${rankings.length} rankings`);
+        break;
+      } catch (err) {
+        console.error(`[PowerTicker] Attempt ${attempt} failed:`, err.message);
+        if (attempt === 2) throw err;
+        await new Promise(r => setTimeout(r, 3000));
+      }
+    }
+    const payload = { rankings, generatedAt: new Date().toISOString() };
+    await savePowerTicker(payload);
+    console.log('[PowerTicker] Saved to cache');
+  } catch (err) {
+    console.error('[PowerTicker] Refresh failed:', err.message);
+  } finally {
+    isRefreshingPower = false;
+  }
+}
+
+const STATIC_POWER_FALLBACK = {
+  rankings: [
+    {name:"Trump",score:4},{name:"Musk",score:3},{name:"Zuckerberg",score:2},{name:"Altman",score:3},
+    {name:"Biden",score:-2},{name:"Harris",score:-1},{name:"Newsom",score:1},{name:"DeSantis",score:-2},
+    {name:"Putin",score:-3},{name:"Zelensky",score:2},{name:"Xi",score:1},{name:"Modi",score:2},
+    {name:"Bezos",score:1},{name:"Cook",score:1},{name:"Nadella",score:2},{name:"Pichai",score:1},
+    {name:"Dimon",score:1},{name:"Powell",score:-1},{name:"Yellen",score:-1},{name:"Buffett",score:1},
+    {name:"Swift",score:2},{name:"Rogan",score:1},{name:"Oprah",score:-1},{name:"Kardashian",score:1},
+    {name:"Karpathy",score:3},{name:"Huang",score:2},{name:"Amodei",score:2},{name:"Hassabis",score:2},
+    {name:"Macron",score:-1},{name:"Milei",score:2}
+  ],
+  generatedAt: new Date().toISOString()
+};
+
+// =====================================================================
 // FINANCIAL TICKER — fetch prices from Yahoo Finance
 // =====================================================================
 const TICKER_SYMBOLS = {
@@ -1192,6 +1317,20 @@ app.post('/api/refresh', async (req, res) => {
   }
 });
 
+// GET /api/power-ticker — serve cached power rankings
+app.get('/api/power-ticker', async (req, res) => {
+  const cached = await loadPowerTicker();
+  if (cached && cached.rankings) return res.json(cached);
+  res.json(STATIC_POWER_FALLBACK);
+});
+
+// POST /api/refresh-power — manual trigger
+app.post('/api/refresh-power', async (req, res) => {
+  if (isRefreshingPower) return res.json({ status: 'already refreshing' });
+  res.json({ status: 'power ticker refresh started' });
+  refreshPowerTicker();
+});
+
 // GET /api/memes — list available meme images
 const MEMES_DIR = path.join(__dirname, 'memes');
 app.get('/api/memes', (req, res) => {
@@ -1285,6 +1424,21 @@ app.listen(PORT, async () => {
     }
   } else {
     console.log('All modes fresh. Serving from cache until next 6pm ET refresh.');
+  }
+
+  // Check power ticker staleness
+  const powerData = await loadPowerTicker();
+  if (!powerData || !powerData.rankings || !powerData.generatedAt) {
+    console.log('[Startup] Power ticker: empty — needs refresh');
+    await refreshPowerTicker();
+  } else {
+    const powerAge = Date.now() - new Date(powerData.generatedAt).getTime();
+    if (powerAge > CATCHUP_MS) {
+      console.log(`[Startup] Power ticker: stale (${(powerAge/3600000).toFixed(1)}h old) — needs refresh`);
+      await refreshPowerTicker();
+    } else {
+      console.log(`[Startup] Power ticker: fresh (${(powerAge/3600000).toFixed(1)}h old, ${powerData.rankings.length} entries)`);
+    }
   }
 
   // Schedule 6pm ET refreshes

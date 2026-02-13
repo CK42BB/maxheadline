@@ -3468,6 +3468,152 @@ class FinancialTicker {
 }
 
 // =====================================================================
+// POWER TICKER — daily public figure power scores, scrolls opposite
+// =====================================================================
+class PowerTicker {
+  constructor(scene) {
+    this.scene = scene;
+    this.rankings = [];
+    this._scrollPx = 0;
+    this._contentWidth = 0;
+    this._items = [];
+
+    this.canvas = document.createElement('canvas');
+    this.canvas.width = 2048;
+    this.canvas.height = 56;
+    this.ctx = this.canvas.getContext('2d');
+
+    this.texture = new THREE.CanvasTexture(this.canvas);
+    this.texture.minFilter = THREE.LinearFilter;
+
+    const geo = new THREE.PlaneGeometry(6, 0.20);
+    const mat = new THREE.MeshBasicMaterial({
+      map: this.texture,
+      transparent: true,
+      opacity: 0.92,
+      side: THREE.DoubleSide,
+      depthWrite: false
+    });
+    this.mesh = new THREE.Mesh(geo, mat);
+    this.mesh.position.set(0.3, -0.28, -0.4);
+    this.mesh.rotation.z = Math.PI * -0.06;
+    this.mesh.renderOrder = -1;
+    this.scene.add(this.mesh);
+
+    this.renderTexture();
+    this.fetchData();
+    this._interval = setInterval(() => this.fetchData(), 600000); // 10 min
+  }
+
+  async fetchData() {
+    try {
+      const res = await fetch('/api/power-ticker');
+      if (!res.ok) return;
+      const data = await res.json();
+      this.rankings = data.rankings || [];
+      this.renderTexture();
+    } catch {}
+  }
+
+  _measureItems() {
+    if (this.rankings.length === 0) { this._contentWidth = 0; this._items = []; return; }
+    const ctx = this.ctx;
+    ctx.font = 'bold 24px monospace';
+    let total = 0;
+    this._items = this.rankings.map(item => {
+      const scoreStr = (item.score > 0 ? '+' : '') + item.score;
+      const nameW = ctx.measureText(item.name).width;
+      const scoreW = ctx.measureText(scoreStr).width;
+      const w = nameW + 12 + scoreW + 50;
+      total += w;
+      return { name: item.name, scoreStr, up: item.score > 0, nameW, scoreW, totalW: w };
+    });
+    this._contentWidth = total;
+  }
+
+  renderTexture() {
+    const ctx = this.ctx;
+    const W = this.canvas.width;
+    const H = this.canvas.height;
+
+    ctx.clearRect(0, 0, W, H);
+    ctx.fillStyle = '#0c0820';
+    ctx.fillRect(0, 0, W, H);
+    ctx.fillStyle = '#ff2d95';
+    ctx.fillRect(0, 0, W, 2);
+    ctx.fillStyle = '#39ff14';
+    ctx.fillRect(0, H - 2, W, 2);
+
+    ctx.font = 'bold 24px monospace';
+    ctx.textBaseline = 'middle';
+
+    if (this.rankings.length === 0) {
+      ctx.fillStyle = '#8088a0';
+      const noData = 'POWER SCORES LOADING \u25C6 ';
+      const noDataW = ctx.measureText(noData).width;
+      for (let x = 0; x < W; x += noDataW) {
+        ctx.fillText(noData, x, H / 2);
+      }
+      this.texture.needsUpdate = true;
+      return;
+    }
+
+    this._measureItems();
+    this._drawFrame(0);
+  }
+
+  _drawFrame(scrollPx) {
+    const ctx = this.ctx;
+    const W = this.canvas.width;
+    const H = this.canvas.height;
+    const cw = this._contentWidth;
+    if (!cw || !this._items) return;
+
+    ctx.clearRect(0, 0, W, H);
+    ctx.fillStyle = '#0c0820';
+    ctx.fillRect(0, 0, W, H);
+    ctx.fillStyle = '#ff2d95';
+    ctx.fillRect(0, 0, W, 2);
+    ctx.fillStyle = '#39ff14';
+    ctx.fillRect(0, H - 2, W, 2);
+
+    ctx.font = 'bold 24px monospace';
+    ctx.textBaseline = 'middle';
+
+    // Scroll RIGHT — items move right, so offset increases canvas start
+    let x = -((-scrollPx) % cw);
+    if (x > 0) x -= cw;
+    while (x < W) {
+      for (const it of this._items) {
+        if (x + it.totalW < 0) { x += it.totalW; continue; }
+        if (x > W) return;
+
+        ctx.fillStyle = '#a0a8c0';
+        ctx.fillText(it.name, x, H / 2);
+        x += it.nameW + 12;
+
+        ctx.fillStyle = it.up ? '#39ff14' : '#ff4444';
+        ctx.fillText(it.scoreStr, x, H / 2);
+        x += it.scoreW + 50;
+      }
+    }
+  }
+
+  update(elapsed) {
+    if (!this._contentWidth) return;
+    // Scroll RIGHT (opposite of financial ticker)
+    this._scrollPx = (this._scrollPx || 0) + 0.6;
+    this._drawFrame(this._scrollPx);
+    this.texture.needsUpdate = true;
+  }
+
+  dispose() {
+    clearInterval(this._interval);
+    this.scene.remove(this.mesh);
+  }
+}
+
+// =====================================================================
 // STORY POLYHEDRON — "Over the shoulder" 3D news image display
 // =====================================================================
 class StoryHeroImage {
@@ -3956,6 +4102,9 @@ class MaxHeadlineApp {
 
     // Financial ticker — diagonal behind anchor
     this.financialTicker = new FinancialTicker(this.scene);
+
+    // Power ticker — public figure scores, scrolls opposite direction
+    this.powerTicker = new PowerTicker(this.scene);
 
     // Post-processing
     this.setupPostProcessing();
@@ -5254,6 +5403,11 @@ class MaxHeadlineApp {
     // Financial ticker scroll
     if (this.financialTicker) {
       this.financialTicker.update(elapsed);
+    }
+
+    // Power ticker scroll
+    if (this.powerTicker) {
+      this.powerTicker.update(elapsed);
     }
 
     // Shader time
