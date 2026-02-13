@@ -1261,16 +1261,33 @@ app.listen(PORT, async () => {
   }
 
   // Check if we have cached stories; if not, do an initial fetch
+  // Also catch-up refresh any mode whose last fetch is older than 20h
+  // (prevents missed refreshes when deploys happen after 6pm ET)
   let hasCache = false;
+  const CATCHUP_MS = 20 * 60 * 60 * 1000; // 20 hours
+  const staleModes = [];
   for (const m of ['everything', 'uponly', 'sota']) {
     const c = await loadCache(m);
-    if (c && c.stories && c.stories.length > 0) { hasCache = true; break; }
+    if (c && c.stories && c.stories.length > 0) {
+      hasCache = true;
+      const fetchedAge = c.fetchedAt ? Date.now() - new Date(c.fetchedAt).getTime() : Infinity;
+      if (fetchedAge > CATCHUP_MS) {
+        staleModes.push(m);
+      }
+    }
   }
   if (!hasCache) {
-    console.log('No cached stories found — doing initial fetch...');
-    await refreshNews('everything');
+    console.log('No cached stories found — doing initial fetch for all modes...');
+    for (const m of ['everything', 'uponly', 'sota']) {
+      await refreshNews(m);
+    }
+  } else if (staleModes.length > 0) {
+    console.log(`Catch-up refresh needed for stale modes: ${staleModes.join(', ')} (last fetch >20h ago)`);
+    for (const m of staleModes) {
+      await refreshNews(m);
+    }
   } else {
-    console.log('Cached stories found. Serving from cache until next 6pm ET refresh.');
+    console.log('Cached stories found and fresh. Serving from cache until next 6pm ET refresh.');
   }
 
   // Schedule 6pm ET refreshes
