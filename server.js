@@ -694,7 +694,7 @@ async function refreshNews(mode = 'everything') {
 }
 
 // =====================================================================
-// SCHEDULE — 6am ET daily
+// SCHEDULE — 6pm ET daily
 // =====================================================================
 function getNextRefreshTime() {
   const now = new Date();
@@ -703,13 +703,13 @@ function getNextRefreshTime() {
   const etParts = etStr.split(', ')[1].split(':');
   const etHour = parseInt(etParts[0]);
 
-  // Next 6am ET only (once daily to control ElevenLabs costs)
+  // Next 6pm ET only (once daily — captures the day's news before evening)
   const etNow = new Date(now.toLocaleString('en-US', { timeZone: 'America/New_York' }));
-  if (etHour >= 6) {
-    // Already past 6am today — next is tomorrow 6am
+  if (etHour >= 18) {
+    // Already past 6pm today — next is tomorrow 6pm
     etNow.setDate(etNow.getDate() + 1);
   }
-  etNow.setHours(6, 0, 0, 0);
+  etNow.setHours(18, 0, 0, 0);
   return etNow;
 }
 
@@ -745,7 +745,7 @@ app.get('/api/stories', async (req, res) => {
   res.json({ ...cache, stories: getPublicStories(cache.stories || []) });
 });
 
-// POST /api/news — legacy endpoint, serves cache only (refreshes happen on 6am ET schedule)
+// POST /api/news — legacy endpoint, serves cache only (refreshes happen on 6pm ET schedule)
 app.post('/api/news', async (req, res) => {
   const { mode = 'everything' } = req.body;
   const cache = await loadCache(mode);
@@ -766,7 +766,7 @@ app.post('/api/news', async (req, res) => {
       console.error('News fetch error:', err);
     }
   }
-  res.status(503).json({ error: 'Stories not available yet. Next refresh at 6am ET.' });
+  res.status(503).json({ error: 'Stories not available yet. Next refresh at 6pm ET.' });
 });
 
 // GET /api/audio/:characterId/:storyId/:energy — serve pre-generated audio
@@ -1262,9 +1262,9 @@ app.listen(PORT, async () => {
     console.log('No cached stories found — doing initial fetch...');
     await refreshNews('everything');
   } else {
-    console.log('Cached stories found. Serving from cache until next 6am ET refresh.');
+    console.log('Cached stories found. Serving from cache until next 6pm ET refresh.');
   }
 
-  // Schedule 6am ET refreshes
+  // Schedule 6pm ET refreshes
   scheduleNextRefresh();
 });
