@@ -2087,17 +2087,7 @@ class SkullCharacter extends CharacterBase {
     nose.rotation.x = Math.PI;
     this.group.add(nose);
 
-    // Upper teeth row (fixed to skull)
-    this.upperTeeth = [];
-    for (let i = -3; i <= 3; i++) {
-      const tooth = new THREE.Mesh(
-        new THREE.BoxGeometry(0.035, 0.06, 0.035),
-        new THREE.MeshStandardMaterial({ color: 0xE8E0D0, roughness: 0.6 })
-      );
-      tooth.position.set(i * 0.05, -0.2, 0.38);
-      this.upperTeeth.push(tooth);
-      this.group.add(tooth);
-    }
+    // Upper teeth removed for cleaner skull look
 
     // Bottom jaw — hinged group, pivot at back of jaw joints
     this.jaw = new THREE.Group();
@@ -2122,8 +2112,8 @@ class SkullCharacter extends CharacterBase {
     chin.scale.set(0.8, 0.6, 0.7);
     this.jaw.add(chin);
 
-    // Lower teeth row (attached to jaw, aligned with upper teeth)
-    for (let i = -3; i <= 3; i++) {
+    // Lower teeth row (5 teeth attached to jaw)
+    for (let i = -2; i <= 2; i++) {
       const tooth = new THREE.Mesh(
         new THREE.BoxGeometry(0.035, 0.05, 0.035),
         new THREE.MeshStandardMaterial({ color: 0xE8E0D0, roughness: 0.6 })
@@ -2915,15 +2905,37 @@ class SpeechManager {
       };
       track();
     } else {
-      // Synthetic amplitude — always guarantees mouth movement while speaking
+      // Synthetic amplitude — speech-like with natural pauses between phrases
       let t = 0;
+      let phraseT = 0;          // time within current phrase
+      let phraseDur = 1.5 + Math.random() * 2; // phrase length (1.5-3.5s)
+      let pauseDur = 0;
+      let inPause = false;
       const track = () => {
         if (!this.isSpeaking) return;
-        t += 0.15;
-        // Natural speech-like rhythm: fast oscillation modulated by slower envelope
-        const amplitude = Math.min(1, Math.max(0,
-          0.3 + 0.4 * Math.sin(t * 2.7) * Math.sin(t * 0.8) + 0.2 * Math.random()
-        ));
+        t += 1/60;
+        phraseT += 1/60;
+        let amplitude;
+        if (inPause) {
+          amplitude = 0;
+          if (phraseT >= pauseDur) {
+            inPause = false;
+            phraseT = 0;
+            phraseDur = 1.0 + Math.random() * 2.5;
+          }
+        } else {
+          // Syllable-like bursts with variation
+          const syllable = Math.abs(Math.sin(t * 8 + Math.sin(t * 3) * 2));
+          const envelope = Math.sin(Math.PI * phraseT / phraseDur); // fade in/out per phrase
+          amplitude = Math.min(1, Math.max(0,
+            syllable * envelope * (0.5 + 0.3 * Math.random()) + 0.05
+          ));
+          if (phraseT >= phraseDur) {
+            inPause = true;
+            phraseT = 0;
+            pauseDur = 0.15 + Math.random() * 0.35; // 150-500ms pause
+          }
+        }
         this.onAmplitude(amplitude);
         this._animFrame = requestAnimationFrame(track);
       };
