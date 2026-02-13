@@ -2750,10 +2750,10 @@ const CHARACTER_VOICES = {
   frog:    { voiceId: 'IKne3meq5aSn9XLyUdCD', name: 'Charlie' },   // Deep, confident, energetic — Australian punch
   robot:   { voiceId: 'onwK4e9ZLuTAKqWW03F9', name: 'Daniel' },    // Steady broadcaster — British, authoritative
   skull:   { voiceId: 'nPczCjzI2devNBz1zQrb', name: 'Brian' },     // Deep, resonant, comforting — dark gravitas
-  fox:     { voiceId: 'oW8bn5YtBB89X2nJ0DT9', name: 'Voxel' },     // New voice for fox character
+  fox:     { voiceId: 'EQu48Nbp4OqDxsnYh27f', name: 'Voxel' },     // New voice for fox
   owl:     { voiceId: 'CwhRBWXzGAHq8TQ4Fs17', name: 'Roger' },     // Laid-back, casual, resonant — professorial
-  cat:     { voiceId: 'cgSgspJ2msm6clMCkdW9', name: 'Jessica' },   // Playful, bright, warm — sassy attitude
-  wizard:  { voiceId: 'cjVigY5qzO86Huf0OWal', name: 'Eric' }       // Smooth, trustworthy — dramatic gravitas
+  cat:     { voiceId: 'NDTYOmYEjbDIVCKB35i3', name: 'Whiskers' },  // New voice for cat
+  wizard:  { voiceId: 'goT3UYdM9bhm0n2lmKQx', name: 'Glitch' }     // New voice for wizard
 };
 
 // Highkey voice settings — frenetic Max Headroom energy
@@ -2918,11 +2918,16 @@ class SpeechManager {
   }
 
   _startAmplitudeTracking() {
-    // Real analyser ONLY for BufferSource path (non-audio-element)
-    // captureStream analyser is unreliable across browsers — returns zeros
-    if (this.analyser && this.currentSource && !this._useAudioEl) {
+    // Try real analyser first — works for BufferSource AND captureStream when available
+    const useRealAnalyser = this.analyser && (
+      (this.currentSource && !this._useAudioEl) || // BufferSource path
+      this._analyserConnected // captureStream connected on audio element path
+    );
+
+    if (useRealAnalyser) {
       const dataArray = new Uint8Array(this.analyser.frequencyBinCount);
       let silenceFrames = 0;
+      let zeroFrames = 0; // detect broken captureStream
       const track = () => {
         if (!this.isSpeaking) return;
         this.analyser.getByteFrequencyData(dataArray);
@@ -2930,7 +2935,17 @@ class SpeechManager {
         for (let i = 0; i < dataArray.length; i++) sum += dataArray[i] * dataArray[i];
         const rms = Math.sqrt(sum / dataArray.length) / 255;
         const amplitude = Math.min(1, rms * 3);
-        // Quick snap to zero on silence (mouth closes immediately on pauses)
+
+        // If captureStream is returning all zeros for 60+ frames, fall back to synthetic
+        if (amplitude < 0.001) zeroFrames++;
+        else zeroFrames = 0;
+        if (zeroFrames > 60 && this._useAudioEl) {
+          console.log('[Audio] captureStream returning zeros, switching to synthetic');
+          this._analyserConnected = false;
+          this._startAmplitudeTracking(); // restart with synthetic
+          return;
+        }
+
         if (amplitude < 0.02) {
           silenceFrames++;
           this.onAmplitude(silenceFrames > 2 ? 0 : amplitude);
@@ -2942,34 +2957,61 @@ class SpeechManager {
       };
       track();
     } else {
-      // Synthetic amplitude — speech-like with natural pauses between phrases
+      // Synthetic amplitude — natural speech rhythm with word-level variation
       let t = 0;
       let phraseT = 0;
-      let phraseDur = 1.5 + Math.random() * 2;
+      let phraseDur = 1.2 + Math.random() * 1.8;
       let pauseDur = 0;
       let inPause = false;
+      let wordT = 0;
+      let wordDur = 0.15 + Math.random() * 0.25;
+      let wordGap = false;
       const track = () => {
         if (!this.isSpeaking) return;
-        t += 1/60;
-        phraseT += 1/60;
+        const dt = 1/60;
+        t += dt;
+        phraseT += dt;
+        wordT += dt;
         let amplitude;
         if (inPause) {
           amplitude = 0;
           if (phraseT >= pauseDur) {
             inPause = false;
             phraseT = 0;
-            phraseDur = 1.0 + Math.random() * 2.5;
+            phraseDur = 1.0 + Math.random() * 2.0;
+            wordT = 0;
+            wordDur = 0.12 + Math.random() * 0.2;
+            wordGap = false;
           }
         } else {
-          const syllable = Math.abs(Math.sin(t * 8 + Math.sin(t * 3) * 2));
-          const envelope = Math.sin(Math.PI * phraseT / phraseDur);
-          amplitude = Math.min(1, Math.max(0,
-            syllable * envelope * (0.5 + 0.3 * Math.random())
-          ));
+          // Word-level: alternate between syllable bursts and brief gaps
+          if (wordGap) {
+            amplitude = 0;
+            if (wordT >= 0.04 + Math.random() * 0.06) {
+              wordGap = false;
+              wordT = 0;
+              wordDur = 0.1 + Math.random() * 0.25;
+            }
+          } else {
+            // Syllable shape: fast attack, slower decay within each word
+            const wordProgress = wordT / wordDur;
+            const attack = Math.min(1, wordProgress * 5); // fast attack
+            const decay = 1 - Math.pow(wordProgress, 2) * 0.3; // gentle decay
+            const jitter = 0.7 + Math.random() * 0.3;
+            // Phrase-level envelope (softer at phrase boundaries)
+            const phraseEnv = Math.sin(Math.PI * Math.min(1, phraseT / phraseDur));
+            amplitude = Math.min(1, Math.max(0,
+              attack * decay * jitter * phraseEnv * 0.75
+            ));
+            if (wordT >= wordDur) {
+              wordGap = true;
+              wordT = 0;
+            }
+          }
           if (phraseT >= phraseDur) {
             inPause = true;
             phraseT = 0;
-            pauseDur = 0.15 + Math.random() * 0.35;
+            pauseDur = 0.12 + Math.random() * 0.3;
           }
         }
         this.onAmplitude(amplitude);

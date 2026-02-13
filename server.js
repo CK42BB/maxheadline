@@ -23,10 +23,10 @@ const CHARACTER_VOICES = {
   frog:    { voiceId: 'IKne3meq5aSn9XLyUdCD', name: 'Charlie' },
   robot:   { voiceId: 'onwK4e9ZLuTAKqWW03F9', name: 'Daniel' },
   skull:   { voiceId: 'nPczCjzI2devNBz1zQrb', name: 'Brian' },
-  fox:     { voiceId: 'oW8bn5YtBB89X2nJ0DT9', name: 'Voxel' },
+  fox:     { voiceId: 'EQu48Nbp4OqDxsnYh27f', name: 'Voxel' },
   owl:     { voiceId: 'CwhRBWXzGAHq8TQ4Fs17', name: 'Roger' },
-  cat:     { voiceId: 'cgSgspJ2msm6clMCkdW9', name: 'Jessica' },
-  wizard:  { voiceId: 'cjVigY5qzO86Huf0OWal', name: 'Eric' }
+  cat:     { voiceId: 'NDTYOmYEjbDIVCKB35i3', name: 'Whiskers' },
+  wizard:  { voiceId: 'goT3UYdM9bhm0n2lmKQx', name: 'Glitch' }
 };
 
 // Highkey only — unhinged Max Headroom chaos energy
