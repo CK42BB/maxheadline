@@ -3025,9 +3025,10 @@ class SpeechManager {
   async fetchAudio(storyId) {
     if (!storyId) return null;
 
-    // Check in-memory cache first (used by splash pre-load)
-    if (this._audioCache && this._audioCache[storyId]) {
-      return this._audioCache[storyId];
+    // Check in-memory cache first (used by splash pre-load) — keyed by char+story
+    const cacheKey = `${this.characterId}:${storyId}`;
+    if (this._audioCache && this._audioCache[cacheKey]) {
+      return this._audioCache[cacheKey];
     }
 
     try {
@@ -4266,10 +4267,11 @@ class MaxHeadlineApp {
           const ctx = this.speech.audioContext;
           const hBuf = await ctx.decodeAudioData(this._preloadedHeadline);
           const sBuf = await ctx.decodeAudioData(this._preloadedSummary);
-          // Cache decoded buffers so playStory finds them instantly
+          // Cache decoded buffers so playStory finds them instantly — keyed by char+story
           this.speech._audioCache = this.speech._audioCache || {};
-          this.speech._audioCache[`${firstStory.id}-headline`] = this.speech._trimTrailingSilence(hBuf);
-          this.speech._audioCache[`${firstStory.id}-summary`] = this.speech._trimTrailingSilence(sBuf);
+          const charId = this.speech.characterId;
+          this.speech._audioCache[`${charId}:${firstStory.id}-headline`] = this.speech._trimTrailingSilence(hBuf);
+          this.speech._audioCache[`${charId}:${firstStory.id}-summary`] = this.speech._trimTrailingSilence(sBuf);
         } catch (e) { /* decode failed, playStory will fetch normally */ }
         this._preloadedHeadline = null;
         this._preloadedSummary = null;
