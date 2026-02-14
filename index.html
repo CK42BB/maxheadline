@@ -474,9 +474,8 @@ body {
   background: linear-gradient(transparent, rgba(10,10,26,0.95));
   z-index: 110;
   display: flex;
-  justify-content: center;
-  align-items: flex-end;
-  gap: 12px;
+  justify-content: space-between;
+  align-items: center;
 }
 #character-selector {
   display: flex;
@@ -551,9 +550,13 @@ body {
 }
 
 #btn-autoplay {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
   font-size: 20px !important;
   padding: 6px 18px !important;
   height: auto !important;
+  z-index: 1;
 }
 .mode-btn svg, #transport svg { vertical-align: -2px; }
 #transport button:hover { border-color: var(--neon-cyan); color: var(--neon-cyan); }
@@ -2929,104 +2932,57 @@ class SpeechManager {
     } catch(e) {}
   }
 
-  _startAmplitudeTracking() {
-    // Try real analyser first — works for BufferSource AND captureStream when available
-    const useRealAnalyser = this.analyser && (
-      (this.currentSource && !this._useAudioEl) || // BufferSource path
-      this._analyserConnected // captureStream connected on audio element path
-    );
+  // Pre-compute amplitude envelope from AudioBuffer at ~60fps
+  _computeAmplitudeEnvelope(buffer) {
+    const fps = 60;
+    const channelData = buffer.getChannelData(0);
+    const sampleRate = buffer.sampleRate;
+    const samplesPerFrame = Math.floor(sampleRate / fps);
+    const frameCount = Math.ceil(channelData.length / samplesPerFrame);
+    const envelope = new Float32Array(frameCount);
 
-    if (useRealAnalyser) {
-      const dataArray = new Uint8Array(this.analyser.frequencyBinCount);
-      let silenceFrames = 0;
-      let zeroFrames = 0; // detect broken captureStream
+    for (let f = 0; f < frameCount; f++) {
+      const start = f * samplesPerFrame;
+      const end = Math.min(start + samplesPerFrame, channelData.length);
+      let sum = 0;
+      for (let i = start; i < end; i++) {
+        sum += channelData[i] * channelData[i];
+      }
+      const rms = Math.sqrt(sum / (end - start));
+      envelope[f] = Math.min(1, rms * 4); // scale up for visible mouth movement
+    }
+    return envelope;
+  }
+
+  _startAmplitudeTracking() {
+    // Prefer pre-computed envelope (perfectly synced to actual audio)
+    if (this._amplitudeEnvelope && this._playStartTime) {
+      const envelope = this._amplitudeEnvelope;
+      const startTime = this._playStartTime;
       const track = () => {
         if (!this.isSpeaking) return;
-        this.analyser.getByteFrequencyData(dataArray);
-        let sum = 0;
-        for (let i = 0; i < dataArray.length; i++) sum += dataArray[i] * dataArray[i];
-        const rms = Math.sqrt(sum / dataArray.length) / 255;
-        const amplitude = Math.min(1, rms * 3);
-
-        // If captureStream is returning all zeros for 60+ frames, fall back to synthetic
-        if (amplitude < 0.001) zeroFrames++;
-        else zeroFrames = 0;
-        if (zeroFrames > 60 && this._useAudioEl) {
-          console.log('[Audio] captureStream returning zeros, switching to synthetic');
-          this._analyserConnected = false;
-          this._startAmplitudeTracking(); // restart with synthetic
+        const elapsed = (performance.now() - startTime) / 1000; // seconds
+        const frameIdx = Math.floor(elapsed * 60); // 60fps envelope
+        if (frameIdx >= envelope.length) {
+          this.onAmplitude(0);
           return;
         }
-
-        if (amplitude < 0.02) {
-          silenceFrames++;
-          this.onAmplitude(silenceFrames > 2 ? 0 : amplitude);
-        } else {
-          silenceFrames = 0;
-          this.onAmplitude(amplitude);
-        }
+        // Smooth between frames for less jitter
+        const frac = (elapsed * 60) - frameIdx;
+        const curr = envelope[frameIdx] || 0;
+        const next = envelope[Math.min(frameIdx + 1, envelope.length - 1)] || 0;
+        const amplitude = curr + (next - curr) * frac;
+        this.onAmplitude(amplitude);
         this._animFrame = requestAnimationFrame(track);
       };
       track();
     } else {
-      // Synthetic amplitude — natural speech rhythm with word-level variation
-      let t = 0;
-      let phraseT = 0;
-      let phraseDur = 1.2 + Math.random() * 1.8;
-      let pauseDur = 0;
-      let inPause = false;
-      let wordT = 0;
-      let wordDur = 0.15 + Math.random() * 0.25;
-      let wordGap = false;
+      // Fallback: simple pulse (should rarely happen now)
       const track = () => {
         if (!this.isSpeaking) return;
-        const dt = 1/60;
-        t += dt;
-        phraseT += dt;
-        wordT += dt;
-        let amplitude;
-        if (inPause) {
-          amplitude = 0;
-          if (phraseT >= pauseDur) {
-            inPause = false;
-            phraseT = 0;
-            phraseDur = 1.0 + Math.random() * 2.0;
-            wordT = 0;
-            wordDur = 0.12 + Math.random() * 0.2;
-            wordGap = false;
-          }
-        } else {
-          // Word-level: alternate between syllable bursts and brief gaps
-          if (wordGap) {
-            amplitude = 0;
-            if (wordT >= 0.04 + Math.random() * 0.06) {
-              wordGap = false;
-              wordT = 0;
-              wordDur = 0.1 + Math.random() * 0.25;
-            }
-          } else {
-            // Syllable shape: fast attack, slower decay within each word
-            const wordProgress = wordT / wordDur;
-            const attack = Math.min(1, wordProgress * 5); // fast attack
-            const decay = 1 - Math.pow(wordProgress, 2) * 0.3; // gentle decay
-            const jitter = 0.7 + Math.random() * 0.3;
-            // Phrase-level envelope (softer at phrase boundaries)
-            const phraseEnv = Math.sin(Math.PI * Math.min(1, phraseT / phraseDur));
-            amplitude = Math.min(1, Math.max(0,
-              attack * decay * jitter * phraseEnv * 0.75
-            ));
-            if (wordT >= wordDur) {
-              wordGap = true;
-              wordT = 0;
-            }
-          }
-          if (phraseT >= phraseDur) {
-            inPause = true;
-            phraseT = 0;
-            pauseDur = 0.12 + Math.random() * 0.3;
-          }
-        }
-        this.onAmplitude(amplitude);
+        const t = performance.now() / 1000;
+        const amplitude = 0.3 + Math.sin(t * 8) * 0.2 + Math.sin(t * 13) * 0.1;
+        this.onAmplitude(Math.max(0, amplitude));
         this._animFrame = requestAnimationFrame(track);
       };
       track();
@@ -3071,8 +3027,11 @@ class SpeechManager {
       const blob = new Blob([wav], { type: 'audio/wav' });
       const url = URL.createObjectURL(blob);
 
+      // Pre-compute amplitude envelope from actual audio for synced lip movement
+      this._amplitudeEnvelope = this._computeAmplitudeEnvelope(buffer);
       this._audioEl.src = url;
       this.isSpeaking = true;
+      this._playStartTime = performance.now();
       this._startAmplitudeTracking();
 
       return new Promise(resolve => {
@@ -3138,6 +3097,8 @@ class SpeechManager {
     this.currentSource = source;
     this.currentGain = gainNode;
     this.isSpeaking = true;
+    this._amplitudeEnvelope = this._computeAmplitudeEnvelope(buffer);
+    this._playStartTime = performance.now();
     this._startAmplitudeTracking();
 
     return new Promise(resolve => {
@@ -3285,6 +3246,8 @@ class SpeechManager {
     }
     window.speechSynthesis?.cancel();
     this.isSpeaking = false;
+    this._amplitudeEnvelope = null;
+    this._playStartTime = null;
     this.onAmplitude(0);
     if (this._animFrame) cancelAnimationFrame(this._animFrame);
     // Immediately resolve any pending playBuffer promise so the async chain unblocks
