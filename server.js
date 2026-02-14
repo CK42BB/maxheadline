@@ -629,7 +629,7 @@ async function generateAllTTS(stories, characterId = 'frog') {
 // Called when a user first selects a non-default character
 const _generatingCharacters = new Set();
 
-async function generateCharacterTTS(characterId, mode, force = false) {
+async function generateCharacterTTS(characterId, mode, force = false, parts = 'all') {
   const key = `${characterId}-${mode}`;
   if (_generatingCharacters.has(key)) return; // already in progress
   _generatingCharacters.add(key);
@@ -640,23 +640,27 @@ async function generateCharacterTTS(characterId, mode, force = false) {
   const cache = await loadCache(mode);
   if (!cache || !cache.stories) { _generatingCharacters.delete(key); return; }
 
-  console.log(`On-demand TTS: generating ${characterId} for ${mode}${force ? ' (FORCE)' : ''}...`);
+  console.log(`On-demand TTS: generating ${characterId} for ${mode}${force ? ' (FORCE)' : ''} [${parts}]...`);
   for (const story of cache.stories) {
-    await generateTTSForStory(
-      characterId, `${story.id}-headline`, story.headline, voice.voiceId,
-      'highkey', VOICE_ENERGY_SETTINGS['highkey-headline'], force
-    );
-    await new Promise(r => setTimeout(r, 200));
+    if (parts === 'all' || parts === 'headline') {
+      await generateTTSForStory(
+        characterId, `${story.id}-headline`, story.headline, voice.voiceId,
+        'highkey', VOICE_ENERGY_SETTINGS['highkey-headline'], force
+      );
+      await new Promise(r => setTimeout(r, 200));
+    }
 
-    const summaryText = story.summaryHighkey || story.summary;
-    await generateTTSForStory(
-      characterId, `${story.id}-summary`, summaryText, voice.voiceId,
-      'highkey', VOICE_ENERGY_SETTINGS['highkey-summary'], force
-    );
-    await new Promise(r => setTimeout(r, 200));
+    if (parts === 'all' || parts === 'summary') {
+      const summaryText = story.summaryHighkey || story.summary;
+      await generateTTSForStory(
+        characterId, `${story.id}-summary`, summaryText, voice.voiceId,
+        'highkey', VOICE_ENERGY_SETTINGS['highkey-summary'], force
+      );
+      await new Promise(r => setTimeout(r, 200));
+    }
   }
   _generatingCharacters.delete(key);
-  console.log(`On-demand TTS complete: ${characterId} for ${mode}`);
+  console.log(`On-demand TTS complete: ${characterId} for ${mode} [${parts}]`);
 }
 
 // =====================================================================
@@ -874,7 +878,7 @@ app.get('/api/audio/:characterId/:storyId/:energy', async (req, res) => {
 // POST /api/prepare-character — kick off on-demand TTS generation for a character
 // Returns immediately; generation happens in background
 app.post('/api/prepare-character', async (req, res) => {
-  const { characterId, mode = 'everything', force = false } = req.body;
+  const { characterId, mode = 'everything', force = false, parts = 'all' } = req.body;
   if (!CHARACTER_VOICES[characterId]) return res.status(400).json({ error: 'Unknown character' });
   if (characterId === 'frog' && !force) return res.json({ status: 'ready', preGenerated: true });
 
@@ -895,8 +899,8 @@ app.post('/api/prepare-character', async (req, res) => {
   }
 
   // Kick off generation in background
-  generateCharacterTTS(characterId, mode, force).catch(e => console.error('Char TTS error:', e));
-  res.json({ status: 'generating', characterId, mode, force });
+  generateCharacterTTS(characterId, mode, force, parts).catch(e => console.error('Char TTS error:', e));
+  res.json({ status: 'generating', characterId, mode, force, parts });
 });
 
 // GET /api/character-status — check if a character's audio is ready
