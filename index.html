@@ -320,6 +320,8 @@ body {
   border-radius: 4px;
   transition: transform 0.15s ease, box-shadow 0.15s ease;
   box-shadow: 0 0 20px rgba(0,240,255,0.3), 0 0 40px rgba(255,45,149,0.2);
+  touch-action: manipulation; /* prevent double-tap-to-zoom on mobile */
+  -webkit-tap-highlight-color: transparent;
 }
 #splash-go:hover {
   transform: scale(1.05);
@@ -2635,13 +2637,13 @@ class WizardCharacter extends CharacterBase {
     // Mustache — two thick swooping halves curling outward from under nose
     this.mustacheParts = [];
     [-1, 1].forEach(side => {
-      // Tapered cylinder oriented horizontally, curling outward and slightly down
-      const muGeo = new THREE.CylinderGeometry(0.025, 0.015, 0.16, 6);
+      // Tapered cylinder laid horizontal — cylinder Y-axis becomes X-axis via rotation
+      const muGeo = new THREE.CylinderGeometry(0.018, 0.01, 0.14, 6);
       const mu = new THREE.Mesh(muGeo, new THREE.MeshStandardMaterial({ color: 0x9E9E9E, flatShading: true }));
-      mu.position.set(side * 0.08, -0.1, 0.38);
-      mu.rotation.z = Math.PI / 2 * side; // lay horizontal, pointing outward
-      mu.rotation.x = 0.25;               // angle slightly forward/down
-      mu.rotation.y = side * -0.2;        // curl tips forward
+      mu.position.set(side * 0.07, -0.08, 0.39);
+      mu.rotation.set(0, 0, Math.PI / 2); // lay flat horizontal first
+      mu.rotation.x = -0.15;              // tilt tips slightly down
+      mu.rotation.y = side * 0.3;         // splay tips outward
       this.mustacheParts.push(mu);
       this.group.add(mu);
     });
@@ -2880,26 +2882,28 @@ class SpeechManager {
 
   // Unlock audio on mobile — must be called inside a user gesture
   async unlockAudio() {
+    // Helper: race a promise against a timeout
+    const withTimeout = (p, ms) => Promise.race([p, new Promise(r => setTimeout(r, ms))]);
+
     // 1. Create persistent HTML5 Audio element (most reliable on mobile)
     if (!this._audioEl) {
       this._audioEl = new Audio();
       this._audioEl.setAttribute('playsinline', '');
       this._audioEl.setAttribute('webkit-playsinline', '');
     }
-    // Play silent WAV to unlock the audio element on iOS/Android
+    // Play silent WAV to unlock the audio element on iOS/Android (2s timeout)
     this._audioEl.src = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA=';
-    try { await this._audioEl.play(); } catch(e) { console.warn('[Audio] Silent play failed:', e); }
+    try { await withTimeout(this._audioEl.play(), 2000); } catch(e) { console.warn('[Audio] Silent play failed:', e); }
     this._useAudioEl = true;
 
     // 2. Also set up AudioContext for analyser (best-effort for mouth animation)
-    await this._ensureAudioContext();
+    try { await withTimeout(this._ensureAudioContext(), 2000); } catch(e) { console.warn('[Audio] AudioContext init timeout'); }
     // Try to connect audio element to analyser via captureStream (non-destructive)
-    if (!this._analyserConnected && this._audioEl.captureStream) {
+    if (this.audioContext && !this._analyserConnected && this._audioEl.captureStream) {
       try {
         const stream = this._audioEl.captureStream();
         const source = this.audioContext.createMediaStreamSource(stream);
         source.connect(this.analyser);
-        // Don't connect analyser to destination — audio element handles output directly
         this._analyserConnected = true;
         console.log('[Audio] Analyser connected via captureStream');
       } catch(e) {
@@ -2909,11 +2913,13 @@ class SpeechManager {
 
     // 3. Also play silent buffer via AudioContext as backup unlock
     try {
-      const buf = this.audioContext.createBuffer(1, 1, this.audioContext.sampleRate);
-      const src = this.audioContext.createBufferSource();
-      src.buffer = buf;
-      src.connect(this.audioContext.destination);
-      src.start(0);
+      if (this.audioContext) {
+        const buf = this.audioContext.createBuffer(1, 1, this.audioContext.sampleRate);
+        const src = this.audioContext.createBufferSource();
+        src.buffer = buf;
+        src.connect(this.audioContext.destination);
+        src.start(0);
+      }
     } catch(e) {}
   }
 
@@ -5640,11 +5646,22 @@ async function bootBackground() {
 
   // Phase 3: User clicks "LET'S NEWS" — satisfies AudioContext gesture
   goBtn.addEventListener('click', async () => {
+    if (goBtn.disabled) return; // prevent double-fire
     goBtn.disabled = true;
     goBtn.textContent = 'GOING LIVE...';
 
+    // Safety timeout: if unlockAudio hangs, proceed anyway after 3s
+    const proceedTimeout = setTimeout(() => {
+      console.warn('[Splash] unlockAudio timeout — proceeding without full audio unlock');
+      splash.classList.add('hidden');
+      appInstance.launchBroadcast();
+      setTimeout(() => splash.remove(), 900);
+    }, 3000);
+
     // Create and unlock AudioContext inside user gesture (critical for mobile)
     await appInstance.speech.unlockAudio();
+
+    clearTimeout(proceedTimeout);
 
     // Fade out transparent splash overlay
     splash.classList.add('hidden');
