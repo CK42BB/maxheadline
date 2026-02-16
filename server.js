@@ -363,10 +363,18 @@ async function searchForStoryImages(stories) {
 // FETCH NEWS FROM ANTHROPIC
 // =====================================================================
 async function fetchNewsFromAPI(mode, characterName = 'Ribbitz') {
+  // Build dynamic date range for the last 48 hours
+  const now = new Date();
+  const yesterday = new Date(now.getTime() - 24 * 3600000);
+  const fmtDate = (d) => d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'America/New_York' });
+  const today = fmtDate(now);
+  const yest = fmtDate(yesterday);
+  const dateRange = `${yest} - ${today}`;
+
   const searchInstructions = {
-    everything: `Find the top 16 global news stories from the last 48 hours (Feb 12-13, 2026) across politics, technology, science, culture, environment, and world events. Diverse mix. Try to include roughly 8 stories from Feb 12 and 8 from Feb 13.`,
-    uponly: `Find the 16 most positive, hopeful, uplifting global news stories from the last 48 hours (Feb 12-13, 2026) — scientific breakthroughs, environmental wins, medical advances, acts of kindness, progress on hard problems, good policy outcomes. Genuinely good news only. Try to include roughly 8 from Feb 12 and 8 from Feb 13.`,
-    sota: `Find the 16 most significant state-of-the-art breakthroughs from the last 48 hours (Feb 12-13, 2026) in AI, robotics, future tech, biotech, quantum computing, space tech, and frontier science. Focus on actual technical achievements, new model releases, research papers, product launches, and engineering milestones — not opinion pieces. Real advances only. Try to include roughly 8 from Feb 12 and 8 from Feb 13.`
+    everything: `Find the top 16 global news stories from the last 48 hours (${dateRange}) across politics, technology, science, culture, environment, and world events. Diverse mix. Try to include roughly 8 stories from each day.`,
+    uponly: `Find the 16 most positive, hopeful, uplifting global news stories from the last 48 hours (${dateRange}) — scientific breakthroughs, environmental wins, medical advances, acts of kindness, progress on hard problems, good policy outcomes. Genuinely good news only. Try to include roughly 8 from each day.`,
+    sota: `Find the 16 most significant state-of-the-art breakthroughs from the last 48 hours (${dateRange}) in AI, robotics, future tech, biotech, quantum computing, space tech, and frontier science. Focus on actual technical achievements, new model releases, research papers, product launches, and engineering milestones — not opinion pieces. Real advances only. Try to include roughly 8 from each day.`
   };
 
   const toneInstructions = {
