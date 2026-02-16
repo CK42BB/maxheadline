@@ -4349,14 +4349,14 @@ class MaxHeadlineApp {
     const colors = MODE_BACKGROUNDS.everything.propColors;
 
     // Large background wireframes (reduced — meme polyhedra fill the rest)
-    for (let i = 0; i < 6; i++) {
+    for (let i = 0; i < 3; i++) {
       const geo = shapes[i % shapes.length];
       const color = colors[i % colors.length];
       const mat = new THREE.MeshBasicMaterial({
         color, wireframe: true, transparent: true, opacity: 0.4 + Math.random() * 0.3
       });
       const mesh = new THREE.Mesh(geo, mat);
-      const layer = i < 4 ? 'near' : 'far';
+      const layer = i < 2 ? 'near' : 'far';
       if (layer === 'near') {
         mesh.position.set(
           (Math.random() - 0.5) * 6,
@@ -4383,7 +4383,7 @@ class MaxHeadlineApp {
     }
 
     // Solid glowing shapes (not wireframe) for depth
-    for (let i = 0; i < 4; i++) {
+    for (let i = 0; i < 2; i++) {
       const geo = shapes[i % shapes.length];
       const color = colors[i % colors.length];
       const mat = new THREE.MeshStandardMaterial({
