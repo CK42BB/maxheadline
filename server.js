@@ -253,118 +253,6 @@ async function scrapeArticleImage(url) {
   } catch { return null; }
 }
 
-// Search for a single story's image by scraping top Google/Bing-style results
-async function searchSingleStoryImage(story) {
-  // Try scraping multiple news sites that cover the same story
-  const searchTerms = story.headline.replace(/['"]/g, '');
-  const searchUrls = [
-    `https://www.google.com/search?q=${encodeURIComponent(searchTerms)}&tbm=isch&tbs=qdr:w`,
-    `https://news.google.com/search?q=${encodeURIComponent(searchTerms)}`,
-  ];
-
-  // Strategy: search for related articles on major outlets and scrape their og:image
-  const majorOutlets = [
-    `https://www.reuters.com/search/news?query=${encodeURIComponent(searchTerms)}`,
-    `https://apnews.com/search?q=${encodeURIComponent(searchTerms)}`,
-    `https://www.bbc.com/search?q=${encodeURIComponent(searchTerms)}`,
-    `https://www.cnn.com/search?q=${encodeURIComponent(searchTerms)}`,
-  ];
-
-  // Try scraping each outlet's search results page for article links, then scrape those
-  for (const searchUrl of majorOutlets) {
-    try {
-      const res = await fetch(searchUrl, {
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
-          'Accept': 'text/html'
-        },
-        signal: AbortSignal.timeout(5000),
-        redirect: 'follow'
-      });
-      if (!res.ok) continue;
-      const html = await res.text();
-
-      // Extract article links from search results
-      const linkMatches = html.matchAll(/href=["'](https?:\/\/[^"']+)["']/gi);
-      for (const m of linkMatches) {
-        const url = m[1];
-        // Skip non-article URLs
-        if (url.includes('/search') || url.includes('javascript:') || url.includes('#')) continue;
-        if (!url.match(/\/(article|story|news|202[0-9])/i)) continue;
-
-        // Try scraping this article for its image
-        const img = await scrapeArticleImage(url);
-        if (img && !isGenericImage(img)) {
-          return img;
-        }
-      }
-    } catch { continue; }
-  }
-  return null;
-}
-
-// Search for relevant news images — individual per-story scraping
-async function searchForStoryImages(stories) {
-  const storiesNeedingImages = stories.filter(s => !s.imageUrl);
-  if (storiesNeedingImages.length === 0) return stories;
-
-  // Try individual searches in parallel
-  await Promise.all(storiesNeedingImages.map(async (story) => {
-    try {
-      const img = await searchSingleStoryImage(story);
-      if (img) {
-        story.imageUrl = img;
-        console.log(`  Found image for "${story.id}" via search`);
-      }
-    } catch {}
-  }));
-
-  // Last resort: use Anthropic API web_search for any still missing
-  const stillMissing = stories.filter(s => !s.imageUrl);
-  if (stillMissing.length > 0) {
-    try {
-      const storyList = stillMissing.map((s, i) =>
-        `${i + 1}. "${s.headline}" (source: ${s.source})`
-      ).join('\n');
-
-      const response = await fetch('https://api.anthropic.com/v1/messages', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-api-key': process.env.ANTHROPIC_API_KEY,
-          'anthropic-version': '2023-06-01'
-        },
-        body: JSON.stringify({
-          model: 'claude-sonnet-4-5-20250929',
-          max_tokens: 2048,
-          tools: [{ type: 'web_search_20250305', name: 'web_search', max_uses: stillMissing.length * 2 }],
-          messages: [{
-            role: 'user',
-            content: `Find a news photo URL for each story. Search for each one individually. Return a JSON array with "index" (0-based) and "imageUrl" (direct .jpg/.png/.webp URL from a news site CDN).\n\n${storyList}\n\nReturn ONLY the JSON array.`
-          }]
-        })
-      });
-
-      const data = await response.json();
-      if (!data.error) {
-        const text = (data.content || []).filter(b => b.type === 'text').map(b => b.text).join('');
-        const arrStart = text.indexOf('['), arrEnd = text.lastIndexOf(']');
-        if (arrStart !== -1 && arrEnd !== -1) {
-          const results = JSON.parse(text.substring(arrStart, arrEnd + 1));
-          for (const r of results) {
-            if (r.imageUrl && r.index >= 0 && r.index < stillMissing.length) {
-              stillMissing[r.index].imageUrl = r.imageUrl;
-            }
-          }
-        }
-      }
-    } catch (err) {
-      console.error('API image search failed:', err.message);
-    }
-  }
-
-  return stories;
-}
 
 // =====================================================================
 // FETCH NEWS FROM ANTHROPIC
@@ -495,16 +383,8 @@ async function resolveStoryImages(stories) {
   }));
 
   const found = resolved.filter(s => s.imageUrl).length;
-  console.log(`Resolved ${found}/${resolved.length} images after article scraping`);
-
-  // Phase 3: For stories STILL missing images, use aggressive Anthropic image search
-  const missing = resolved.filter(s => !s.imageUrl).length;
-  if (missing > 0) {
-    console.log(`Searching for ${missing} missing story images via API...`);
-    await searchForStoryImages(resolved);
-    const newFound = resolved.filter(s => s.imageUrl).length;
-    console.log(`Total images after search: ${newFound}/${resolved.length}`);
-  }
+  const missing = resolved.length - found;
+  console.log(`Resolved ${found}/${resolved.length} images (${missing} missing — no expensive API fallback)`);
 
   return resolved;
 }
