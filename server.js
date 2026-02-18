@@ -78,7 +78,14 @@ async function initDB() {
       generated_at TIMESTAMPTZ DEFAULT NOW()
     )
   `);
-  console.log('[DB] PostgreSQL connected, story_cache + audio_cache + power_ticker tables ready');
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS event_markets (
+      id TEXT PRIMARY KEY,
+      data JSONB NOT NULL,
+      updated_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+  console.log('[DB] PostgreSQL connected, story_cache + audio_cache + power_ticker + event_markets tables ready');
 }
 
 function getCacheFile(mode) {
@@ -796,6 +803,7 @@ function scheduleNextRefresh() {
       await refreshNews(mode);
     }
     await refreshPowerTicker();
+    await refreshEventMarkets();
     scheduleNextRefresh();
   }, delay);
 }
@@ -1472,6 +1480,126 @@ app.post('/api/refresh-power', async (req, res) => {
   refreshPowerTicker();
 });
 
+// =====================================================================
+// EVENT MARKETS TICKER — Polymarket prediction market odds
+// =====================================================================
+const EVENT_MARKETS_FILE = path.join(DATA_DIR, 'event-markets.json');
+
+async function loadEventMarkets() {
+  if (pool) {
+    try {
+      const res = await pool.query("SELECT data FROM event_markets WHERE id = 'current'");
+      if (res.rows.length > 0) return res.rows[0].data;
+    } catch (err) {
+      console.error('[EventMarkets] DB load error:', err.message);
+    }
+  }
+  if (fs.existsSync(EVENT_MARKETS_FILE)) {
+    try { return JSON.parse(fs.readFileSync(EVENT_MARKETS_FILE, 'utf8')); } catch { return null; }
+  }
+  return null;
+}
+
+async function saveEventMarkets(data) {
+  if (pool) {
+    try {
+      await pool.query(
+        `INSERT INTO event_markets (id, data, updated_at) VALUES ('current', $1, NOW())
+         ON CONFLICT (id) DO UPDATE SET data = $1, updated_at = NOW()`,
+        [JSON.stringify(data)]
+      );
+    } catch (err) {
+      console.error('[EventMarkets] DB save error:', err.message);
+    }
+  }
+  try { fs.writeFileSync(EVENT_MARKETS_FILE, JSON.stringify(data, null, 2)); } catch {}
+}
+
+async function fetchEventMarkets() {
+  const url = 'https://gamma-api.polymarket.com/markets?active=true&closed=false&order=volume24hr&ascending=false&limit=20';
+  const res = await fetch(url, {
+    headers: { 'Accept': 'application/json' },
+    signal: AbortSignal.timeout(10000)
+  });
+  if (!res.ok) throw new Error(`Polymarket API returned ${res.status}`);
+  const markets = await res.json();
+
+  return markets.map(m => {
+    let odds = 0.5;
+    try {
+      const prices = JSON.parse(m.outcomePrices || '[]');
+      if (prices.length > 0) odds = parseFloat(prices[0]);
+    } catch {}
+    // Shorten title to ~40 chars for ticker
+    let title = (m.question || '').trim();
+    if (title.length > 43) title = title.substring(0, 40) + '...';
+    return {
+      title,
+      odds: Math.round(odds * 100),
+      volume: parseFloat(m.volume24hr || 0)
+    };
+  });
+}
+
+let isRefreshingEvents = false;
+
+async function refreshEventMarkets() {
+  if (isRefreshingEvents) return;
+  isRefreshingEvents = true;
+  try {
+    console.log('[EventMarkets] Fetching from Polymarket...');
+    let markets;
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      try {
+        markets = await fetchEventMarkets();
+        console.log(`[EventMarkets] Got ${markets.length} markets`);
+        break;
+      } catch (err) {
+        console.error(`[EventMarkets] Attempt ${attempt} failed:`, err.message);
+        if (attempt === 2) throw err;
+        await new Promise(r => setTimeout(r, 3000));
+      }
+    }
+    const payload = { markets, fetchedAt: new Date().toISOString() };
+    await saveEventMarkets(payload);
+    console.log('[EventMarkets] Saved to cache');
+  } catch (err) {
+    console.error('[EventMarkets] Refresh failed:', err.message);
+  } finally {
+    isRefreshingEvents = false;
+  }
+}
+
+const STATIC_EVENTS_FALLBACK = {
+  markets: [
+    { title: "Will AI pass the Turing test by 2026?", odds: 72, volume: 1200000 },
+    { title: "Will Bitcoin hit $150k in 2026?", odds: 38, volume: 980000 },
+    { title: "Will there be a US recession in 2026?", odds: 28, volume: 850000 },
+    { title: "Will SpaceX Starship reach orbit?", odds: 85, volume: 750000 },
+    { title: "Will the Fed cut rates in Q1 2026?", odds: 45, volume: 700000 },
+    { title: "Will Trump win 2028 GOP nomination?", odds: 55, volume: 650000 },
+    { title: "Will Apple release AR glasses?", odds: 32, volume: 500000 },
+    { title: "Will OpenAI IPO in 2026?", odds: 22, volume: 480000 },
+    { title: "Will Nvidia hit $200/share?", odds: 48, volume: 420000 },
+    { title: "Will Ukraine ceasefire happen in 2026?", odds: 35, volume: 380000 }
+  ],
+  fetchedAt: new Date().toISOString()
+};
+
+// GET /api/event-markets — serve cached market odds
+app.get('/api/event-markets', async (req, res) => {
+  const cached = await loadEventMarkets();
+  if (cached && cached.markets) return res.json(cached);
+  res.json(STATIC_EVENTS_FALLBACK);
+});
+
+// POST /api/refresh-events — manual trigger
+app.post('/api/refresh-events', async (req, res) => {
+  if (isRefreshingEvents) return res.json({ status: 'already refreshing' });
+  res.json({ status: 'event markets refresh started' });
+  refreshEventMarkets();
+});
+
 // GET /api/memes — list available meme images
 const MEMES_DIR = path.join(__dirname, 'memes');
 app.get('/api/memes', (req, res) => {
@@ -1562,6 +1690,17 @@ app.listen(PORT, async () => {
     const powerAge = Date.now() - new Date(powerData.generatedAt).getTime();
     console.log(`[Startup] Power ticker: ${powerData.rankings.length} entries, ${(powerAge/3600000).toFixed(1)}h old`);
   }
+
+  // Event markets — log status, refresh every 10 minutes (free API, markets move fast)
+  const eventsData = await loadEventMarkets();
+  if (!eventsData || !eventsData.markets) {
+    console.log('[Startup] Event markets: empty — will populate at next interval or manual refresh');
+  } else {
+    const eventsAge = Date.now() - new Date(eventsData.fetchedAt).getTime();
+    console.log(`[Startup] Event markets: ${eventsData.markets.length} markets, ${(eventsAge/3600000).toFixed(1)}h old`);
+  }
+  // Refresh event markets every 10 minutes (Polymarket API is free)
+  setInterval(() => refreshEventMarkets(), 600000);
 
   // Schedule 6pm ET refreshes
   scheduleNextRefresh();

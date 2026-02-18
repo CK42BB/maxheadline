@@ -3668,6 +3668,152 @@ class PowerTicker {
 }
 
 // =====================================================================
+// EVENT MARKETS TICKER — Polymarket prediction odds, scrolls left
+// =====================================================================
+class EventMarketsTicker {
+  constructor(scene) {
+    this.scene = scene;
+    this.markets = [];
+    this._scrollPx = 0;
+    this._contentWidth = 0;
+    this._items = [];
+
+    this.canvas = document.createElement('canvas');
+    this.canvas.width = 2048;
+    this.canvas.height = 52;
+    this.ctx = this.canvas.getContext('2d');
+
+    this.texture = new THREE.CanvasTexture(this.canvas);
+    this.texture.minFilter = THREE.LinearFilter;
+
+    const geo = new THREE.PlaneGeometry(6, 0.18);
+    const mat = new THREE.MeshBasicMaterial({
+      map: this.texture,
+      transparent: true,
+      opacity: 0.92,
+      side: THREE.DoubleSide,
+      depthWrite: false
+    });
+    this.mesh = new THREE.Mesh(geo, mat);
+    this.mesh.position.set(0.3, -0.44, -0.4);
+    this.mesh.rotation.z = Math.PI * -0.08;
+    this.mesh.renderOrder = -1;
+    this.scene.add(this.mesh);
+
+    this.renderTexture();
+    this.fetchData();
+    this._interval = setInterval(() => this.fetchData(), 300000); // 5 min
+  }
+
+  async fetchData() {
+    try {
+      const res = await fetch('/api/event-markets');
+      if (!res.ok) return;
+      const data = await res.json();
+      this.markets = data.markets || [];
+      this.renderTexture();
+    } catch {}
+  }
+
+  _measureItems() {
+    if (this.markets.length === 0) { this._contentWidth = 0; this._items = []; return; }
+    const ctx = this.ctx;
+    ctx.font = 'bold 22px monospace';
+    let total = 0;
+    this._items = this.markets.map(item => {
+      const oddsStr = item.odds + '\u00a2 YES';
+      const titleW = ctx.measureText(item.title).width;
+      const oddsW = ctx.measureText(oddsStr).width;
+      const w = titleW + 14 + oddsW + 50;
+      total += w;
+      return { title: item.title, oddsStr, up: item.odds >= 50, titleW, oddsW, totalW: w };
+    });
+    this._contentWidth = total;
+  }
+
+  renderTexture() {
+    const ctx = this.ctx;
+    const W = this.canvas.width;
+    const H = this.canvas.height;
+
+    ctx.clearRect(0, 0, W, H);
+    ctx.fillStyle = '#0c0820';
+    ctx.fillRect(0, 0, W, H);
+    ctx.fillStyle = '#00f0ff';
+    ctx.fillRect(0, 0, W, 2);
+    ctx.fillStyle = '#ff2d95';
+    ctx.fillRect(0, H - 2, W, 2);
+
+    ctx.font = 'bold 22px monospace';
+    ctx.textBaseline = 'middle';
+
+    if (this.markets.length === 0) {
+      ctx.fillStyle = '#8088a0';
+      const noData = 'PREDICTION MARKETS LOADING \u25C6 ';
+      const noDataW = ctx.measureText(noData).width;
+      for (let x = 0; x < W; x += noDataW) {
+        ctx.fillText(noData, x, H / 2);
+      }
+      this.texture.needsUpdate = true;
+      return;
+    }
+
+    this._measureItems();
+    this._drawFrame(0);
+  }
+
+  _drawFrame(scrollPx) {
+    const ctx = this.ctx;
+    const W = this.canvas.width;
+    const H = this.canvas.height;
+    const cw = this._contentWidth;
+    if (!cw || !this._items) return;
+
+    ctx.clearRect(0, 0, W, H);
+    ctx.fillStyle = '#0c0820';
+    ctx.fillRect(0, 0, W, H);
+    ctx.fillStyle = '#00f0ff';
+    ctx.fillRect(0, 0, W, 2);
+    ctx.fillStyle = '#ff2d95';
+    ctx.fillRect(0, H - 2, W, 2);
+
+    ctx.font = 'bold 22px monospace';
+    ctx.textBaseline = 'middle';
+
+    // Scroll LEFT — items move left
+    let x = -(scrollPx % cw);
+    if (x > 0) x -= cw;
+    while (x < W) {
+      for (const it of this._items) {
+        if (x + it.totalW < 0) { x += it.totalW; continue; }
+        if (x > W) return;
+
+        ctx.fillStyle = '#a0a8c0';
+        ctx.fillText(it.title, x, H / 2);
+        x += it.titleW + 14;
+
+        ctx.fillStyle = it.up ? '#39ff14' : '#ff4444';
+        ctx.fillText(it.oddsStr, x, H / 2);
+        x += it.oddsW + 50;
+      }
+    }
+  }
+
+  update(elapsed) {
+    if (!this._contentWidth) return;
+    // Scroll LEFT (opposite of power ticker)
+    this._scrollPx = (this._scrollPx || 0) + 0.5;
+    this._drawFrame(this._scrollPx);
+    this.texture.needsUpdate = true;
+  }
+
+  dispose() {
+    clearInterval(this._interval);
+    this.scene.remove(this.mesh);
+  }
+}
+
+// =====================================================================
 // STORY POLYHEDRON — "Over the shoulder" 3D news image display
 // =====================================================================
 class StoryHeroImage {
@@ -4159,6 +4305,9 @@ class MaxHeadlineApp {
 
     // Power ticker — public figure scores, scrolls opposite direction
     this.powerTicker = new PowerTicker(this.scene);
+
+    // Event markets ticker — Polymarket prediction odds
+    this.eventMarketsTicker = new EventMarketsTicker(this.scene);
 
     // Post-processing
     this.setupPostProcessing();
@@ -5467,6 +5616,11 @@ class MaxHeadlineApp {
     // Power ticker scroll
     if (this.powerTicker) {
       this.powerTicker.update(elapsed);
+    }
+
+    // Event markets ticker scroll
+    if (this.eventMarketsTicker) {
+      this.eventMarketsTicker.update(elapsed);
     }
 
     // Shader time
