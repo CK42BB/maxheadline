@@ -1,5 +1,9 @@
 node_modules/
 .env
+.env.local
+.env.*.local
 .DS_Store
 data/audio/
 data/stats.json
+data/*.json
+.claude/

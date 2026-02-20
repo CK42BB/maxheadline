@@ -131,20 +131,19 @@ AudioBufferSourceNode → GainNode → AnalyserNode → AudioContext.destination
 
 ### Fetching
 
-Claude `claude-sonnet-4-5-20250929` with the `web_search_20250305` tool (up to 8 searches per request). Three mode-specific prompts:
+Claude `claude-sonnet-4-5-20250929` with the `web_search_20250305` tool (`max_uses: 12` searches per request). Three mode-specific prompts:
 
 - **Everything**: Balanced mix of world news, tech, politics, environment, economy
 - **Up Only**: Positive stories only — breakthroughs, conservation wins, scientific progress
 - **State of the Art**: Frontier tech breakthroughs — AI, robotics, biotech, quantum, space
 
-Returns 8 stories per mode, each with: `id`, `headline`, `summary`, `summaryHighkey` (editorial take), `emotion`, `severity` (1-10), `source`, `sourceUrl`, `imageUrl`, `category`.
+Returns 16 stories per mode, each with: `id`, `headline`, `summary`, `summaryHighkey` (editorial take), `emotion`, `severity` (1-10), `source`, `sourceUrl`, `imageUrl`, `category`.
 
 ### Image Resolution Pipeline
 
-Three-phase approach to get high-quality hero images:
+Two-phase approach to get high-quality hero images:
 1. Keep Claude-provided URLs if valid
 2. Scrape article pages for `og:image`, `twitter:image`, JSON-LD structured data, or first `<figure><img>`
-3. Fall back to a second Anthropic web_search specifically for news photos
 
 Filters out generic logos, favicons, and placeholder images. Resolves relative URLs to absolute.
 
@@ -152,8 +151,8 @@ Filters out generic logos, favicons, and placeholder images. Resolves relative U
 
 - **Scheduling**: Automatic refresh at **6pm ET daily** (once/day to control ElevenLabs costs, captures same-day news)
 - **Merging**: New stories merge on top of existing, deduped by `id`. Each story stamped with `addedAt` timestamp
-- **Public TTL**: Stories visible for 48 hours, retained in DB for 14 days
-- **Startup catch-up**: On deploy/restart, checks each mode — refreshes any that are stale (>20h) or empty
+- **Public TTL**: Stories visible for 72 hours, retained in DB for 14 days
+- **Startup**: Serves whatever is cached — never refreshes on startup/deploy/restart
 
 ---
 
@@ -169,6 +168,17 @@ Daily "power scores" for 30 public figures, generated via Claude Sonnet with 6 w
 
 ---
 
+## Event Markets Ticker — Polymarket API
+
+Prediction market odds for major world events, sourced from Polymarket's free API. Displays as a third scrolling ticker with bet-style formatting (event title + probability percentage).
+
+- **Schedule**: Refreshes every 10 minutes (Polymarket API is free, no rate limit concerns)
+- **Storage**: PostgreSQL `event_markets` table with JSON file fallback
+- **Endpoint**: `GET /api/event-markets` — returns cached odds or static fallback
+- **Display**: `EventMarketsTicker` class — scrolling canvas texture, same CRT-styled rendering as other tickers
+
+---
+
 ## Financial Ticker — Yahoo Finance API
 
 16 symbols tracked: indices (DJI, S&P 500, VIX), crypto (BTC, ETH), commodities (Gold, Silver), forex (EUR/USD, GBP/USD), and mega-cap tech (AAPL, NVDA, TSLA, GOOG, META, AMZN, MSFT). 2-minute server cache with Yahoo crumb/cookie auth. Static fallback when Yahoo blocks Railway IPs.
@@ -179,13 +189,14 @@ Displayed as a CNN-style scrolling `CanvasTexture` ticker — 2048x64 canvas, cy
 
 ## Persistent Storage — PostgreSQL
 
-Railway PostgreSQL addon with `DATABASE_URL` auto-injected. Three tables:
+Railway PostgreSQL addon with `DATABASE_URL` auto-injected. Four tables:
 
 | Table | Purpose | Key |
 |-------|---------|-----|
 | `story_cache` | News stories per mode (JSONB) | mode TEXT PK |
 | `audio_cache` | TTS MP3 files (BYTEA) | filename TEXT PK |
 | `power_ticker` | Power score rankings (JSONB) | id TEXT PK |
+| `event_markets` | Prediction market odds (JSONB) | id TEXT PK |
 
 All storage functions are Postgres-first with JSON file fallback (for local dev without DATABASE_URL). Audio files persist across Railway deploys — filesystem is just a fast cache layer restored from Postgres on startup.
 
@@ -205,7 +216,7 @@ Pure CSS, no preprocessor. Vaporwave palette via CSS custom properties. CRT over
 
 | Method | Path | Purpose |
 |--------|------|---------|
-| GET | `/api/stories` | Serve cached stories by mode (public <48h only) |
+| GET | `/api/stories` | Serve cached stories by mode (public <72h only) |
 | POST | `/api/news` | Legacy trigger, returns cached or fetches |
 | GET | `/api/audio/:char/:story/:energy` | Stream pre-generated MP3 (filesystem → Postgres → on-demand) |
 | POST | `/api/tts` | Live TTS fallback |
@@ -219,6 +230,8 @@ Pure CSS, no preprocessor. Vaporwave palette via CSS custom properties. CRT over
 | POST | `/api/regen-tts` | Regenerate missing audio |
 | POST | `/api/prepare-character` | Kick off on-demand TTS for a character |
 | GET | `/api/character-status/:char/:mode` | Check TTS generation progress |
+| GET | `/api/event-markets` | Prediction market odds |
+| POST | `/api/refresh-events` | Manual event markets refresh |
 | GET | `/api/memes` | List available meme images |
 
 ---
