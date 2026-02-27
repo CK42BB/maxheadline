@@ -1430,10 +1430,12 @@ async function fetchEventMarkets() {
 
   // Find 5 "interesting" markets from the remaining pool
   // Interesting = odds closest to 50% (most uncertain/contentious), $50k+ total volume
+  // Filter out sports games and spreads — they're naturally ~50% but not interesting for news
+  const sportsPattern = /^Spread:|vs\.|win the \d{4}.*(?:NBA|NFL|NHL|MLB|FIFA|Premier|Cup|Finals|Series|Championship)/i;
   const remaining = parsed.slice(20).filter(m =>
     !usedTitles.has(m.title) &&
     m.totalVolume >= 50000 &&
-    !/^Spread:/.test(m.fullQuestion) // skip sports spreads
+    !sportsPattern.test(m.fullQuestion)
   );
 
   // Score by how close odds are to 50% (50 = max interest at 50/50)
