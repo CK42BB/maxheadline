@@ -1430,12 +1430,13 @@ async function fetchEventMarkets() {
 
   // Find 5 "interesting" markets from the remaining pool
   // Interesting = odds closest to 50% (most uncertain/contentious), $50k+ total volume
-  // Filter out sports games and spreads — they're naturally ~50% but not interesting for news
-  const sportsPattern = /^Spread:|vs\.|win the \d{4}.*(?:NBA|NFL|NHL|MLB|FIFA|Premier|Cup|Finals|Series|Championship)/i;
+  // Filter out sports games/spreads and extreme odds (< 10% or > 90% aren't interesting)
+  const boringPattern = /^Spread:|vs\.|win the \d{4}.*(?:NBA|NFL|NHL|MLB|FIFA|Premier|Cup|Finals|Series|Championship)/i;
   const remaining = parsed.slice(20).filter(m =>
     !usedTitles.has(m.title) &&
     m.totalVolume >= 50000 &&
-    !sportsPattern.test(m.fullQuestion)
+    m.odds >= 10 && m.odds <= 90 &&
+    !boringPattern.test(m.fullQuestion)
   );
 
   // Score by how close odds are to 50% (50 = max interest at 50/50)
@@ -1444,16 +1445,17 @@ async function fetchEventMarkets() {
   });
   remaining.sort((a, b) => b.interestScore - a.interestScore);
 
-  // Pick top 5, deduplicating similar topics (>50% word overlap = skip)
+  // Pick top 5, deduplicating similar topics (>30% significant-word overlap = skip)
   const interesting = [];
   const allSelected = [...topByVolume];
   for (const m of remaining) {
     if (interesting.length >= 5) break;
-    const words = new Set(m.fullQuestion.toLowerCase().split(/\s+/));
+    const words = m.fullQuestion.toLowerCase().split(/\s+/).filter(w => w.length > 2);
+    const wordSet = new Set(words);
     const isDupe = allSelected.some(s => {
-      const sWords = new Set(s.fullQuestion.toLowerCase().split(/\s+/));
-      const overlap = [...words].filter(w => sWords.has(w) && w.length > 3).length;
-      return overlap >= Math.min(words.size, sWords.size) * 0.5;
+      const sWords = new Set(s.fullQuestion.toLowerCase().split(/\s+/).filter(w => w.length > 2));
+      const overlap = [...wordSet].filter(w => sWords.has(w)).length;
+      return overlap >= Math.min(wordSet.size, sWords.size) * 0.35;
     });
     if (!isDupe) {
       interesting.push(m);
