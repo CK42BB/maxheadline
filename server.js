@@ -1430,36 +1430,37 @@ async function fetchEventMarkets() {
 
   // Find 5 "interesting" markets from the remaining pool
   // Interesting = odds closest to 50% (most uncertain/contentious), $50k+ total volume
-  // Filter out sports games/spreads and extreme odds (< 10% or > 90% aren't interesting)
-  const boringPattern = /^Spread:|vs\.|win the \d{4}.*(?:NBA|NFL|NHL|MLB|FIFA|Premier|Cup|Finals|Series|Championship)/i;
+  // Filter out sports games/spreads, skip very extreme odds (< 5% or > 95%)
+  const boringPattern = /^Spread:|vs\.|win the \d{4}.*(?:NBA|NFL|NHL|MLB|FIFA|Premier|Cup|Finals|Series|Championship)|post \d+-\d+ tweets/i;
   const remaining = parsed.slice(20).filter(m =>
     !usedTitles.has(m.title) &&
     m.totalVolume >= 50000 &&
-    m.odds >= 10 && m.odds <= 90 &&
+    m.odds >= 5 && m.odds <= 95 &&
     !boringPattern.test(m.fullQuestion)
   );
 
   // Score by how close odds are to 50% (50 = max interest at 50/50)
+  // Bonus for higher total volume (more established/serious markets)
   remaining.forEach(m => {
-    m.interestScore = 50 - Math.abs(m.odds - 50);
+    const oddsScore = 50 - Math.abs(m.odds - 50); // 0-50, higher = closer to 50%
+    const volBonus = Math.min(Math.log10(m.totalVolume + 1) - 4, 5); // 0-5 bonus for $10k-$100M
+    m.interestScore = oddsScore + volBonus;
   });
   remaining.sort((a, b) => b.interestScore - a.interestScore);
 
-  // Pick top 5, deduplicating similar topics (>30% significant-word overlap = skip)
+  // Pick top 5, dedup only among interesting picks (not top 20) to allow diverse topics
   const interesting = [];
-  const allSelected = [...topByVolume];
   for (const m of remaining) {
     if (interesting.length >= 5) break;
     const words = m.fullQuestion.toLowerCase().split(/\s+/).filter(w => w.length > 2);
     const wordSet = new Set(words);
-    const isDupe = allSelected.some(s => {
+    const isDupeOfPick = interesting.some(s => {
       const sWords = new Set(s.fullQuestion.toLowerCase().split(/\s+/).filter(w => w.length > 2));
       const overlap = [...wordSet].filter(w => sWords.has(w)).length;
-      return overlap >= Math.min(wordSet.size, sWords.size) * 0.35;
+      return overlap >= Math.min(wordSet.size, sWords.size) * 0.4;
     });
-    if (!isDupe) {
+    if (!isDupeOfPick) {
       interesting.push(m);
-      allSelected.push(m);
     }
   }
 
