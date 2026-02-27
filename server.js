@@ -1397,7 +1397,7 @@ async function saveEventMarkets(data) {
 
 async function fetchEventMarkets() {
   // Fetch larger pool to find interesting markets beyond just top volume
-  const url = 'https://gamma-api.polymarket.com/markets?active=true&closed=false&order=volume24hr&ascending=false&limit=100';
+  const url = 'https://gamma-api.polymarket.com/markets?active=true&closed=false&order=volume24hr&ascending=false&limit=200';
   const res = await fetch(url, {
     headers: { 'Accept': 'application/json' },
     signal: AbortSignal.timeout(10000)
