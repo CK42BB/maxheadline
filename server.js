@@ -1396,29 +1396,74 @@ async function saveEventMarkets(data) {
 }
 
 async function fetchEventMarkets() {
-  const url = 'https://gamma-api.polymarket.com/markets?active=true&closed=false&order=volume24hr&ascending=false&limit=20';
+  // Fetch larger pool to find interesting markets beyond just top volume
+  const url = 'https://gamma-api.polymarket.com/markets?active=true&closed=false&order=volume24hr&ascending=false&limit=100';
   const res = await fetch(url, {
     headers: { 'Accept': 'application/json' },
     signal: AbortSignal.timeout(10000)
   });
   if (!res.ok) throw new Error(`Polymarket API returned ${res.status}`);
-  const markets = await res.json();
+  const allMarkets = await res.json();
 
-  return markets.map(m => {
+  function parseMarket(m) {
     let odds = 0.5;
     try {
       const prices = JSON.parse(m.outcomePrices || '[]');
       if (prices.length > 0) odds = parseFloat(prices[0]);
     } catch {}
-    // Shorten title to ~40 chars for ticker
     let title = (m.question || '').trim();
     if (title.length > 43) title = title.substring(0, 40) + '...';
     return {
       title,
+      fullQuestion: (m.question || '').trim(),
       odds: Math.round(odds * 100),
-      volume: parseFloat(m.volume24hr || 0)
+      volume: parseFloat(m.volume24hr || 0),
+      totalVolume: parseFloat(m.volumeNum || m.volume || 0)
     };
+  }
+
+  const parsed = allMarkets.map(parseMarket);
+
+  // Top 20 by volume (existing behavior)
+  const topByVolume = parsed.slice(0, 20);
+  const usedTitles = new Set(topByVolume.map(m => m.title));
+
+  // Find 5 "interesting" markets from the remaining pool
+  // Interesting = odds closest to 50% (most uncertain/contentious), $50k+ total volume
+  const remaining = parsed.slice(20).filter(m =>
+    !usedTitles.has(m.title) &&
+    m.totalVolume >= 50000 &&
+    !/^Spread:/.test(m.fullQuestion) // skip sports spreads
+  );
+
+  // Score by how close odds are to 50% (50 = max interest at 50/50)
+  remaining.forEach(m => {
+    m.interestScore = 50 - Math.abs(m.odds - 50);
   });
+  remaining.sort((a, b) => b.interestScore - a.interestScore);
+
+  // Pick top 5, deduplicating similar topics (>50% word overlap = skip)
+  const interesting = [];
+  const allSelected = [...topByVolume];
+  for (const m of remaining) {
+    if (interesting.length >= 5) break;
+    const words = new Set(m.fullQuestion.toLowerCase().split(/\s+/));
+    const isDupe = allSelected.some(s => {
+      const sWords = new Set(s.fullQuestion.toLowerCase().split(/\s+/));
+      const overlap = [...words].filter(w => sWords.has(w) && w.length > 3).length;
+      return overlap >= Math.min(words.size, sWords.size) * 0.5;
+    });
+    if (!isDupe) {
+      interesting.push(m);
+      allSelected.push(m);
+    }
+  }
+
+  console.log(`[EventMarkets] Top 20 by volume + ${interesting.length} interesting picks`);
+  interesting.forEach(m => console.log(`  [interesting] ${m.fullQuestion} (${m.odds}%, $${Math.round(m.totalVolume/1000)}k vol)`));
+
+  const combined = [...topByVolume, ...interesting];
+  return combined.map(({ title, odds, volume }) => ({ title, odds, volume }));
 }
 
 let isRefreshingEvents = false;
